@@ -67,7 +67,7 @@ The MVP is backend-only: the user interface is **Swagger UI**, served by the app
 | **Guest** | Not logged in | No token |
 | **Customer** | Registered user, role `CUSTOMER` | Valid JWT with role `CUSTOMER` |
 | **Admin** | Back-office user, role `ADMIN` | Valid JWT with role `ADMIN` |
-| **System** | Monitoring and deployment tools (Prometheus, CI/CD) | Network access to Actuator endpoints |
+
 
 The first admin is created by a seed data migration in the `dev` profile and from environment variables in `prod`. Admins cannot be created through the public API.
 
@@ -243,11 +243,9 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 
 **FR-PLT-02 Health** — `GET /actuator/health` returns `UP` when the application and the database are reachable. Used by the deployment pipeline as a final check.
 
-**FR-PLT-03 Metrics** — `GET /actuator/prometheus` exposes standard JVM and HTTP metrics plus the business counter `bank.transfers`, tagged by `outcome` (`completed`, `rejected`). Scraped by Prometheus and shown in a Grafana dashboard.
+**FR-PLT-03 API documentation** — Swagger UI at `/swagger-ui.html` documents every endpoint, request and response, and lets the user log in with a bearer token.
 
-**FR-PLT-04 API documentation** — Swagger UI at `/swagger-ui.html` documents every endpoint, request and response, and lets the user log in with a bearer token.
-
-**FR-PLT-05 Error format** — every error response uses the RFC 7807 `ProblemDetail` format (section 8).
+**FR-PLT-04 Error format** — every error response uses the RFC 7807 `ProblemDetail` format (section 8).
 
 ---
 
@@ -374,7 +372,7 @@ Base path `/api`. Bodies are JSON. Amounts are JSON numbers with up to 2 decimal
 | 15 | POST | `/api/transfers` | Send a transfer (`Idempotency-Key` header) | Source owner | FR-TRF-01, 02 |
 | 16 | GET | `/api/transfers/{id}` | Transfer detail | Parties, Admin | FR-TRF-03 |
 | 17 | GET | `/api/info` | Build information | Everyone | FR-PLT-01 |
-| 18 | GET | `/actuator/health`, `/actuator/prometheus` | Health and metrics | Everyone / internal | FR-PLT-02, 03 |
+
 
 ### 7.1 Example: send a transfer
 
@@ -473,8 +471,8 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 | NFR-05 | Quality | Unit and integration tests (Testcontainers, real PostgreSQL); line coverage at least 70%, enforced by JaCoCo in CI |
 | NFR-06 | Delivery | Every pull request runs build and tests in GitHub Actions; `main` accepts only reviewed PRs with green CI |
 | NFR-07 | Delivery | Every merge on `main` builds a Docker image, pushes it to GHCR and deploys it automatically; the pipeline checks `/actuator/health` after deploy |
-| NFR-08 | Portability | The whole stack (app, PostgreSQL, Prometheus, Grafana) starts locally with `docker compose up` |
-| NFR-09 | Observability | Health, JVM, HTTP and `bank.transfers` metrics available in a provisioned Grafana dashboard |
+| NFR-08 | Portability | The whole stack (app, PostgreSQL) starts locally with `docker compose up` |
+| NFR-09 | Observability | Health, JVM, HTTP and `bank.transfers`
 | NFR-10 | Documentation | OpenAPI documentation generated from code; README with architecture, run instructions and CI badge |
 
 ---
