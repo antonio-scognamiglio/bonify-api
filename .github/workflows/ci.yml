@@ -9,20 +9,22 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: bonify-test
+          POSTGRES_USER: bonify-ci
+          POSTGRES_PASSWORD: ci-test-password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+          --health-cmd "pg_isready -U bonify-ci -d bonify-test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,6 +39,8 @@ jobs:
       - name: Build and test
         run: mvn -B verify
         env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB }}
-          SPRING_DATASOURCE_USERNAME: ${{ secrets.POSTGRES_USER }}
-          SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME: bonify-test
+          DB_USER: bonify-ci
+          DB_PASSWORD: ci-test-password
+          DB_HOST: localhost
+          DB_PORT: 5432
