@@ -3,6 +3,7 @@
 
 # IDE
 .vscode/
+.idea/
 
 # Maven build output
 target/
