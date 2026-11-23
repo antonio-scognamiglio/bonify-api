@@ -15,7 +15,7 @@ jobs:
         env:
           POSTGRES_DB: bonyfy-db
           POSTGRES_USER: root
-          POSTGRES_PASSWORD: password123
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         ports:
           - 5432:5432
     steps:
@@ -48,4 +48,4 @@ jobs:
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/bonyfy-db
           SPRING_DATASOURCE_USERNAME: root
-          SPRING_DATASOURCE_PASSWORD: password123
+          SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
