@@ -1,3 +1,6 @@
+# Agent rules
+.agents/
+
 # Compiled class file
 *.class
 
