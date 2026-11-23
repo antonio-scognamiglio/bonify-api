@@ -4,6 +4,8 @@ Day 1 tasks:
         - entities must end with Entity suffix example: "name"Entity 
         - must use conventional commits for commits
         - must use camelCase notations for code
+        - every module must have his package example: modules.customer.CustomerEntity
+        - every endpoint must start with: "/api"
     define daily tasks:
         - setup docker
         - define github branch rules
