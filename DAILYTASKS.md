@@ -8,7 +8,6 @@ Day 1 tasks:
         - every endpoint must start with: "/api"
     define daily tasks:
         - setup docker
-        - define github branch rules
         - create db schema
         - create basic entities -> CustomerEntity, AccountEntity, TransferEntity, AccountTransactionEntity
         - create the enums for the entities -> RoleEnum, StatusEnum, TypeEnum
