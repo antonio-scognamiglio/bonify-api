@@ -1,6 +1,12 @@
 # Agent rules
 .agents/
 
+# IDE
+.vscode/
+
+# Maven build output
+target/
+
 # Compiled class file
 *.class
 
