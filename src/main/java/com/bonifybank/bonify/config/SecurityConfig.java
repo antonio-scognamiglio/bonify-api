@@ -1,5 +1,8 @@
 package com.bonifybank.bonify.config;
 
+import java.io.IOException;
+import java.time.LocalDateTime;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -10,10 +13,15 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
 /**
  * Decides only what is public and what requires authentication.
  * Role-based permissions (CUSTOMER / ADMIN) live on the controller methods via @PreAuthorize
  * (enabled by @EnableMethodSecurity); see functional-analysis.md section 2.1 and the endpoint table.
+ * 401/403 from the security filter chain are returned as RFC 7807 ProblemDetail by the
+ * exceptionHandling entry point / access denied handler below.
  */
 @Configuration
 @EnableMethodSecurity
@@ -37,7 +45,35 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v*/auth/register", "/api/v*/auth/login").permitAll()
                         .anyRequest().authenticated())
                 // Temporary: to be replaced by the JWT filter once login is implemented
-                .httpBasic(Customizer.withDefaults());
+                .httpBasic(Customizer.withDefaults())
+                .exceptionHandling(handler -> handler
+                        .authenticationEntryPoint(this::unauthorized)
+                        .accessDeniedHandler(this::forbidden));
         return http.build();
+    }
+
+    // Token missing/malformed/expired → 401 UNAUTHORIZED (RFC 7807)
+    private void unauthorized(HttpServletRequest request, HttpServletResponse response, Exception ex) throws IOException {
+        writeProblemDetail(response, 401, "UNAUTHORIZED", "Unauthorized", "Authentication required", request.getRequestURI());
+    }
+
+    // Role or ownership check failed → 403 FORBIDDEN (RFC 7807)
+    private void forbidden(HttpServletRequest request, HttpServletResponse response, Exception ex) throws IOException {
+        writeProblemDetail(response, 403, "FORBIDDEN", "Forbidden", "Access denied", request.getRequestURI());
+    }
+
+    private static void writeProblemDetail(HttpServletResponse response, int status, String code, String title, String detail, String instance) throws IOException {
+        String type = "https://bonify.example/errors/" + code.toLowerCase();
+        response.setStatus(status);
+        response.setContentType("application/problem+json");
+        response.getWriter().write(
+                "{\"type\":\"" + type + "\""
+                + ",\"title\":\"" + title + "\""
+                + ",\"status\":" + status
+                + ",\"detail\":\"" + detail + "\""
+                + ",\"instance\":\"" + instance + "\""
+                + ",\"code\":\"" + code + "\""
+                + ",\"timestamp\":\"" + LocalDateTime.now() + "\"}"
+        );
     }
 }
