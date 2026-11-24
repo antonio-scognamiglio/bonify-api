@@ -1,0 +1,15 @@
+package com.bonifybank.bonify.exception;
+
+public enum ErrorCodes {
+    VALIDATION_ERROR,
+    SAME_ACCOUNT,
+    WRONG_CURRENT_PASSWORD,
+    UNAUTHORIZED,
+    FORBIDDEN,
+    NOT_FOUND,
+    EMAIL_ALREADY_USED,
+    IDEMPOTENCY_KEY_REUSED,
+    INSUFFICIENT_FUNDS,
+    ACCOUNT_BLOCKED,
+    INTERNAL_ERROR
+}
