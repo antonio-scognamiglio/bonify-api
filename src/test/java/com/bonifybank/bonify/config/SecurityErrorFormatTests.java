@@ -17,7 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.bonifybank.bonify.modules.customer.CustomerController;
 
 /**
- * Security-filter errors (401/403) are returned as RFC 7807 ProblemDetail,
+ * 401 (unauthenticated) comes from the security filter chain's entry point;
+ * 403 (authenticated, insufficient role) comes from @PreAuthorize /
+ * GlobalExceptionHandler. Both are returned as RFC 7807 ProblemDetail,
  * not plain Spring defaults.
  */
 @WebMvcTest(CustomerController.class)
