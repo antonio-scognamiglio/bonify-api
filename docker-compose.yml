@@ -3,16 +3,15 @@ name: bonify
 services:
   postgres:
     image: postgres:16
-    container_name: postgres-bonify
-    ports:
-      - "5433:5432"
     environment:
-      POSTGRES_DB: bonyfy-db
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: ${DB_NAME:?DB_NAME must be set}
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+    ports:
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    restart: always
+    restart: unless-stopped
 
 volumes:
   postgres-data:
