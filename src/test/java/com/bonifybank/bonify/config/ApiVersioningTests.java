@@ -14,7 +14,7 @@ import com.bonifybank.bonify.modules.customer.CustomerController;
 
 @WebMvcTest(CustomerController.class)
 @Import(WebConfig.class)
-@AutoConfigureMockMvc(addFilters = false) // verifichiamo il routing, non la security
+@AutoConfigureMockMvc(addFilters = false) // we test routing, not security
 class ApiVersioningTests {
 
     @Autowired
@@ -22,7 +22,7 @@ class ApiVersioningTests {
 
     @Test
     void v1IsRoutedToController() throws Exception {
-        // 501: la rotta esiste ed e' raggiunta, ma non e' ancora implementata
+        // 501: the route exists and is reached, but is not implemented yet
         mockMvc.perform(get("/api/v1/customers")).andExpect(status().isNotImplemented());
     }
 

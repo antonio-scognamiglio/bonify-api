@@ -11,15 +11,15 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Qui si decide solo cosa e' pubblico e cosa richiede login.
- * I permessi per ruolo (CUSTOMER / ADMIN) sono sui singoli metodi dei controller con @PreAuthorize
- * (abilitato da @EnableMethodSecurity), vedi functional-analysis.md sez. 2.1 e tabella endpoint.
+ * Decides only what is public and what requires authentication.
+ * Role-based permissions (CUSTOMER / ADMIN) live on the controller methods via @PreAuthorize
+ * (enabled by @EnableMethodSecurity); see functional-analysis.md section 2.1 and the endpoint table.
  */
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    // Endpoint di springdoc: la UI di Swagger e la specifica OpenAPI generata
+    // springdoc endpoints: the Swagger UI and the generated OpenAPI spec
     private static final String[] SWAGGER_PATHS = {
             "/swagger-ui.html",
             "/swagger-ui/**",
@@ -29,14 +29,14 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // API REST stateless (JWT in arrivo): niente sessione, quindi niente CSRF
+                // Stateless REST API (JWT coming): no session, hence no CSRF
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_PATHS).permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v*/auth/register", "/api/v*/auth/login").permitAll()
                         .anyRequest().authenticated())
-                // Temporaneo: da sostituire con il filtro JWT quando sara' implementato il login
+                // Temporary: to be replaced by the JWT filter once login is implemented
                 .httpBasic(Customizer.withDefaults());
         return http.build();
     }

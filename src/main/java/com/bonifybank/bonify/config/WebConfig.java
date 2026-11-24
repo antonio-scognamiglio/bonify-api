@@ -7,20 +7,20 @@ import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Prefisso comune per i controller REST del progetto (package modules): /api/{version}/...
- * La versione viene letta dal segmento di path (vedi spring.mvc.apiversion.* in application.properties)
- * e usata da Spring per scegliere il metodo tramite l'attributo "version" dei mapping.
+ * Common prefix for the project REST controllers (modules package): /api/{version}/...
+ * The version is read from the path segment (see spring.mvc.apiversion.* in application.properties)
+ * and used by Spring to select the handler method through the "version" attribute of the mappings.
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    // La "v" e' nel pattern (non nella variabile) cosi' anche Swagger genera /api/v1/... e non /api/1/...
+    // The "v" is in the pattern (not in the variable) so Swagger also generates /api/v1/... instead of /api/1/...
     public static final String API_PREFIX = "/api/v{version}";
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
-        // Solo i controller del progetto: senza il filtro sul package anche i @RestController
-        // di librerie esterne (es. springdoc /v3/api-docs) finirebbero sotto /api/{version}.
+        // Project controllers only: without the package filter, @RestControllers from external
+        // libraries (e.g. springdoc /v3/api-docs) would also end up under /api/{version}.
         configurer.addPathPrefix(API_PREFIX, HandlerTypePredicate.forBasePackage("com.bonifybank.bonify.modules")
                 .and(HandlerTypePredicate.forAnnotation(RestController.class)));
     }

@@ -23,9 +23,9 @@ import com.bonifybank.bonify.modules.transaction.TransactionController;
 import com.bonifybank.bonify.modules.transfer.TransferController;
 
 /**
- * Matrice dei permessi (functional-analysis.md, tabella endpoint).
- * 501 = la richiesta ha superato la security ed e' arrivata al controller (non ancora implementato).
- * 401 = utente non autenticato, 403 = autenticato ma senza il ruolo richiesto.
+ * Permission matrix (functional-analysis.md, endpoint table).
+ * 501 = the request passed security and reached the controller (not implemented yet).
+ * 401 = unauthenticated user, 403 = authenticated but without the required role.
  */
 @WebMvcTest({ AuthController.class, CustomerController.class, AccountController.class,
         TransactionController.class, TransferController.class })
