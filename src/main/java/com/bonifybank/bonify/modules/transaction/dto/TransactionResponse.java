@@ -2,9 +2,10 @@ package com.bonifybank.bonify.modules.transaction.dto;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 public record TransactionResponse(
-        Long id,
+        UUID id,
         String type,
         BigDecimal amount,
         BigDecimal balanceAfter,
