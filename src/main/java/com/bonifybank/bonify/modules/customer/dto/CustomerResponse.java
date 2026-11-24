@@ -11,7 +11,7 @@ public record CustomerResponse(
         String phoneNumber,
         String taxCode,
         String role,
-        boolean active,
-        Instant createdAt
+        Instant createdAt,
+        Instant updatedAt
 ) {
 }
