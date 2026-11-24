@@ -2,11 +2,12 @@ package com.bonifybank.bonify.modules.auth;
 
 import java.util.Locale;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
+
+import com.bonifybank.bonify.exception.BusinessException;
+import com.bonifybank.bonify.exception.ErrorCodes;
 
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRepository;
@@ -33,13 +34,13 @@ public class AuthService {
      * FR-AUTH-01: public registration always creates a CUSTOMER (admins come from seed data only).
      *
      * @return the saved customer; map it to the profile DTO (never expose the password hash)
-     * @throws ResponseStatusException 409 if the email is already registered
+     * @throws BusinessException EMAIL_ALREADY_USED if the email is already registered
      */
     @Transactional
     public CustomerEntity register(String firstName, String lastName, String email, String rawPassword) {
         String normalizedEmail = normalizeEmail(email);
         if (customerRepository.existsByEmail(normalizedEmail)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already registered");
+            throw new BusinessException(ErrorCodes.EMAIL_ALREADY_USED, "Email already registered");
         }
         CustomerEntity customer = CustomerEntity.builder()
                 .firstName(firstName.strip())
@@ -55,13 +56,13 @@ public class AuthService {
      * FR-AUTH-02: checks the credentials and issues a JWT.
      *
      * @return the access token; expiresIn is {@link JwtService#getExpirationSeconds()}
-     * @throws ResponseStatusException 401 for unknown email or wrong password (same message)
+     * @throws BusinessException UNAUTHORIZED for unknown email or wrong password (same message)
      */
     @Transactional(readOnly = true)
     public String login(String email, String rawPassword) {
         CustomerEntity customer = customerRepository.findByEmail(normalizeEmail(email))
                 .filter(found -> passwordEncoder.matches(rawPassword, found.getPassword()))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, INVALID_CREDENTIALS));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.UNAUTHORIZED, INVALID_CREDENTIALS));
         return jwtService.generateToken(customer);
     }
 

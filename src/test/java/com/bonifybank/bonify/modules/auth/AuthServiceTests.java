@@ -13,11 +13,11 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.server.ResponseStatusException;
 
+import com.bonifybank.bonify.exception.BusinessException;
+import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRepository;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
@@ -59,8 +59,8 @@ class AuthServiceTests {
         when(customerRepository.existsByEmail("anna@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register("Anna", "Rossi", "ANNA@example.com", "password123"))
-                .isInstanceOfSatisfying(ResponseStatusException.class,
-                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.EMAIL_ALREADY_USED));
         verify(customerRepository, never()).save(any());
     }
 
@@ -79,19 +79,19 @@ class AuthServiceTests {
                 .thenReturn(Optional.of(existingCustomer("password123")));
         when(customerRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
 
-        ResponseStatusException wrongPassword = loginFailure("anna@example.com", "wrong-pass");
-        ResponseStatusException unknownEmail = loginFailure("nobody@example.com", "password123");
+        BusinessException wrongPassword = loginFailure("anna@example.com", "wrong-pass");
+        BusinessException unknownEmail = loginFailure("nobody@example.com", "password123");
 
-        assertThat(wrongPassword.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(unknownEmail.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(wrongPassword.getReason()).isEqualTo(unknownEmail.getReason());
+        assertThat(wrongPassword.getCode()).isEqualTo(ErrorCodes.UNAUTHORIZED);
+        assertThat(unknownEmail.getCode()).isEqualTo(ErrorCodes.UNAUTHORIZED);
+        assertThat(wrongPassword.getMessage()).isEqualTo(unknownEmail.getMessage());
         verify(jwtService, never()).generateToken(any());
     }
 
-    private ResponseStatusException loginFailure(String email, String password) {
+    private BusinessException loginFailure(String email, String password) {
         try {
             authService.login(email, password);
-        } catch (ResponseStatusException e) {
+        } catch (BusinessException e) {
             return e;
         }
         throw new AssertionError("login should have failed");
