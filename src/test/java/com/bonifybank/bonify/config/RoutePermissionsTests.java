@@ -1,0 +1,93 @@
+package com.bonifybank.bonify.config;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.stream.Stream;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import com.bonifybank.bonify.modules.account.AccountController;
+import com.bonifybank.bonify.modules.auth.AuthController;
+import com.bonifybank.bonify.modules.customer.CustomerController;
+import com.bonifybank.bonify.modules.transaction.TransactionController;
+import com.bonifybank.bonify.modules.transfer.TransferController;
+
+/**
+ * Permission matrix (functional-analysis.md, endpoint table).
+ * 501 = the request passed security and reached the controller (not implemented yet).
+ * 401 = unauthenticated user, 403 = authenticated but without the required role.
+ */
+@WebMvcTest({ AuthController.class, CustomerController.class, AccountController.class,
+        TransactionController.class, TransferController.class })
+@Import({ WebConfig.class, SecurityConfig.class })
+class RoutePermissionsTests {
+
+    private static final int OK = 501;
+    private static final int UNAUTHORIZED = 401;
+    private static final int FORBIDDEN = 403;
+
+    private static final String IBAN = "IT60X0542811101000000123456";
+    private static final String UUID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+
+    @Autowired
+    MockMvc mockMvc;
+
+    //                    method,           path,                                     guest,        customer,  admin
+    static Stream<Arguments> routes() {
+        return Stream.of(
+                route(HttpMethod.POST,  "/api/v1/auth/register",                      OK,           OK,        OK),
+                route(HttpMethod.POST,  "/api/v1/auth/login",                         OK,           OK,        OK),
+                route(HttpMethod.GET,   "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.PATCH, "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.PUT,   "/api/v1/customers/me/password",              UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.GET,   "/api/v1/customers",                          UNAUTHORIZED, FORBIDDEN, OK),
+                route(HttpMethod.PATCH, "/api/v1/customers/" + UUID,                  UNAUTHORIZED, FORBIDDEN, OK),
+                route(HttpMethod.POST,  "/api/v1/accounts",                           UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.GET,   "/api/v1/accounts",                           UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.GET,   "/api/v1/accounts/" + IBAN,                   UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.POST,  "/api/v1/accounts/" + IBAN + "/deposit",      UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.POST,  "/api/v1/accounts/" + IBAN + "/withdraw",     UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.GET,   "/api/v1/accounts/" + IBAN + "/transactions", UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.PATCH, "/api/v1/accounts/" + IBAN + "/status",       UNAUTHORIZED, FORBIDDEN, OK),
+                route(HttpMethod.POST,  "/api/v1/transfers",                          UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.GET,   "/api/v1/transfers/" + UUID,                  UNAUTHORIZED, OK,        OK));
+    }
+
+    private static Arguments route(HttpMethod method, String path, int guest, int customer, int admin) {
+        return Arguments.of(method, path, guest, customer, admin);
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("routes")
+    void guest(HttpMethod method, String path, int guest, int customer, int admin) throws Exception {
+        mockMvc.perform(build(method, path)).andExpect(status().is(guest));
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("routes")
+    void customer(HttpMethod method, String path, int guest, int customer, int admin) throws Exception {
+        mockMvc.perform(build(method, path).with(user("customer").roles("CUSTOMER")))
+                .andExpect(status().is(customer));
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("routes")
+    void admin(HttpMethod method, String path, int guest, int customer, int admin) throws Exception {
+        mockMvc.perform(build(method, path).with(user("admin").roles("ADMIN")))
+                .andExpect(status().is(admin));
+    }
+
+    private static MockHttpServletRequestBuilder build(HttpMethod method, String path) {
+        return request(method, path).header("Idempotency-Key", "test-key");
+    }
+}
