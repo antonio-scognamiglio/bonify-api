@@ -3,9 +3,13 @@
 
 # IDE
 .vscode/
+.idea/
 
 # Maven build output
 target/
+
+# Environment files
+.env
 
 # Compiled class file
 *.class
