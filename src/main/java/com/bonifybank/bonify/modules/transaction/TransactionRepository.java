@@ -10,7 +10,7 @@ import java.util.UUID;
 public interface TransactionRepository extends JpaRepository<TransactionEntity, UUID> {
     Page<TransactionEntity> findByAccount_Id (UUID accountId, Pageable pageable);
 
-    Page<TransactionEntity> findByAccount_IdAndCreatedGreaterThanEqual (UUID accountId, Instant from, Pageable pageable);
+    Page<TransactionEntity> findByAccount_IdAndCreatedAtGreaterThanEqual (UUID accountId, Instant from, Pageable pageable);
 
     Page<TransactionEntity> findByAccount_IdAndCreatedAtLessThanEqual(UUID accountId, Instant to, Pageable pageable);
 
