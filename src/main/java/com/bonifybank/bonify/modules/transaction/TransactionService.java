@@ -29,7 +29,7 @@ public class TransactionService {
     private final AccountRepository accountRepository;
     private final CustomerRepository customerRepository;
 
-    private TransactionService(
+    public TransactionService(
             TransactionRepository transactionRepository,
             AccountRepository accountRepository,
             CustomerRepository customerRepository
