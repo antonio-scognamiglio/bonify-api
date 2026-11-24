@@ -3,9 +3,13 @@ package com.bonifybank.bonify.config;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -13,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +28,7 @@ import com.bonifybank.bonify.modules.auth.AuthController;
 import com.bonifybank.bonify.modules.auth.AuthService;
 import com.bonifybank.bonify.modules.auth.JwtService;
 import com.bonifybank.bonify.modules.customer.CustomerController;
+import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.transaction.TransactionController;
 import com.bonifybank.bonify.modules.transfer.TransferController;
 
@@ -38,6 +44,8 @@ import com.bonifybank.bonify.modules.transfer.TransferController;
 class RoutePermissionsTests {
 
     private static final int OK = 501;
+    private static final int REGISTERED = 201;
+    private static final int LOGIN_OK = 200;
     private static final int UNAUTHORIZED = 401;
     private static final int FORBIDDEN = 403;
 
@@ -53,11 +61,18 @@ class RoutePermissionsTests {
     @MockitoBean
     JwtService jwtService;
 
+    @BeforeEach
+    void stubAuthService() {
+        when(authService.register(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(CustomerEntity.builder().id(java.util.UUID.randomUUID()).build());
+        when(authService.login(anyString(), anyString())).thenReturn("test-token");
+    }
+
     //                    method,           path,                                     guest,        customer,  admin
     static Stream<Arguments> routes() {
         return Stream.of(
-                route(HttpMethod.POST,  "/api/v1/auth/register",                      OK,           OK,        OK),
-                route(HttpMethod.POST,  "/api/v1/auth/login",                         OK,           OK,        OK),
+                route(HttpMethod.POST,  "/api/v1/auth/register",                      REGISTERED,   REGISTERED, REGISTERED),
+                route(HttpMethod.POST,  "/api/v1/auth/login",                         LOGIN_OK,     LOGIN_OK,   LOGIN_OK),
                 route(HttpMethod.GET,   "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PATCH, "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PUT,   "/api/v1/customers/me/password",              UNAUTHORIZED, OK,        OK),
@@ -99,6 +114,13 @@ class RoutePermissionsTests {
     }
 
     private static MockHttpServletRequestBuilder build(HttpMethod method, String path) {
-        return request(method, path).header("Idempotency-Key", "test-key");
+        MockHttpServletRequestBuilder builder = request(method, path).header("Idempotency-Key", "test-key");
+        if (method == HttpMethod.POST && path.startsWith("/api/v1/auth/")) {
+            builder.contentType(MediaType.APPLICATION_JSON)
+                    .content(path.endsWith("/register")
+                            ? "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\",\"password\":\"password123\"}"
+                            : "{\"email\":\"john@example.com\",\"password\":\"password123\"}");
+        }
+        return builder;
     }
 }

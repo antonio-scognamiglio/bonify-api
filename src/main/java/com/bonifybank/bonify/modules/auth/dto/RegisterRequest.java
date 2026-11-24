@@ -1,0 +1,16 @@
+package com.bonifybank.bonify.modules.auth.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+/**
+ * FR-AUTH-01 input. The service normalizes email (lower case) and strips names, so only
+ * format/length validation happens here.
+ */
+public record RegisterRequest(
+        @NotBlank @Size(min = 1, max = 50) String firstName,
+        @NotBlank @Size(min = 1, max = 50) String lastName,
+        @NotBlank @Email @Size(max = 254) String email,
+        @NotBlank @Size(min = 8) String password) {
+}
