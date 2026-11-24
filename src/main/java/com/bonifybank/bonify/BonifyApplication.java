@@ -9,5 +9,4 @@ public class BonifyApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(BonifyApplication.class, args);
 	}
-
 }

@@ -26,6 +26,17 @@
 - Create the services
 - Create the repositories
 - Draft the authentication
-- Seed data
 - Error handling
 - Swagger
+
+## Day 3
+
+### Tasks
+
+- Implement the controllers that are not implemented yet
+- Update error handling in the services using the global exception handler
+- Create the Spring seed data (not done in Day 2)
+- Test all routes on Swagger
+- Write the missing tests and review the existing ones
+- Add a refresh token or change the type of authentication
+- (Optional) Document the Swagger routes so callers know what to pass, with curated examples
