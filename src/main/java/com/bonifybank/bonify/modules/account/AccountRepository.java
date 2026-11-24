@@ -13,7 +13,7 @@ import java.util.UUID;
 public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     Optional<AccountEntity> findByIban(String iban);
 
-    boolean existByIban(String iban);
+    boolean existsByIban(String iban);
 
     List<AccountEntity> findByCustomer_Id(UUID customerId);
 
