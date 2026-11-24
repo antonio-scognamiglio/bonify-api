@@ -1,6 +1,9 @@
 # Agent rules
 .agents/
 
+# Kilo
+.kilo/
+
 # IDE
 .vscode/
 .idea/
