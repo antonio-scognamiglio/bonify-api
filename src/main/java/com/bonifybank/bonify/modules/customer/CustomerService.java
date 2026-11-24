@@ -8,6 +8,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -51,11 +53,11 @@ public class CustomerService {
     public void changeMyPassword(ChangePasswordRequest request) {
         CustomerEntity current = getCurrentCustomer();
 
-        //TO DO ECCEZIONE TRAMITE HANDLER
+        //TO DO REPLACE EXCEPTION
         if (!matchesHash(request.currentPassword(), current.getPassword())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
-        //TO DO ECCEZIONE TRAMITE HANDLER
+        //TO DO REPLACE EXCEPTION
         if (request.currentPassword().equals(request.newPassword())) {
             throw new IllegalArgumentException("New password must be different from current password");
         }
@@ -72,7 +74,7 @@ public class CustomerService {
 
     @Transactional
     public CustomerResponse updateCustomer(UUID id, AdminUpdateCustomerRequest request) {
-        //TO DO ECCEZIONE TRAMITE HANDLER
+        //TO DO REPLACE EXCEPTION
         CustomerEntity customer = customerRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + id));
 
@@ -85,7 +87,7 @@ public class CustomerService {
         return toResponse(saved);
     }
 
-    //TO DO FIX THIS METHOD
+
     private CustomerEntity getCurrentCustomer() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {
