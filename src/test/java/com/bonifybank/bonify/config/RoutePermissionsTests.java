@@ -13,11 +13,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.bonifybank.bonify.modules.account.AccountController;
 import com.bonifybank.bonify.modules.auth.AuthController;
+import com.bonifybank.bonify.modules.auth.AuthService;
+import com.bonifybank.bonify.modules.auth.JwtService;
 import com.bonifybank.bonify.modules.customer.CustomerController;
 import com.bonifybank.bonify.modules.transaction.TransactionController;
 import com.bonifybank.bonify.modules.transfer.TransferController;
@@ -29,7 +33,8 @@ import com.bonifybank.bonify.modules.transfer.TransferController;
  */
 @WebMvcTest({ AuthController.class, CustomerController.class, AccountController.class,
         TransactionController.class, TransferController.class })
-@Import({ WebConfig.class, SecurityConfig.class })
+@Import({ WebConfig.class, SecurityConfig.class, JwtConfig.class })
+@TestPropertySource(properties = "bonify.jwt.secret=test-secret-that-is-at-least-32-bytes-long")
 class RoutePermissionsTests {
 
     private static final int OK = 501;
@@ -41,6 +46,12 @@ class RoutePermissionsTests {
 
     @Autowired
     MockMvc mockMvc;
+
+    @MockitoBean
+    AuthService authService;
+
+    @MockitoBean
+    JwtService jwtService;
 
     //                    method,           path,                                     guest,        customer,  admin
     static Stream<Arguments> routes() {

@@ -44,3 +44,4 @@ jobs:
           DB_PASSWORD: ci-test-password
           DB_HOST: localhost
           DB_PORT: 5432
+          JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
