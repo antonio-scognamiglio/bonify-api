@@ -1,10 +1,11 @@
 package com.bonifybank.bonify.modules.transaction;
 
+import com.bonifybank.bonify.exception.BusinessException;
+import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.account.AccountEntity;
 import com.bonifybank.bonify.modules.account.AccountRepository;
-import com.bonifybank.bonify.modules.account.dto.AccountResponse;
+import com.bonifybank.bonify.modules.customer.CurrentCustomerResolver;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
-import com.bonifybank.bonify.modules.customer.CustomerRepository;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
 import com.bonifybank.bonify.modules.transaction.dto.PagedResponse;
 import com.bonifybank.bonify.modules.transaction.dto.TransactionResponse;
@@ -12,31 +13,28 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service
 public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
-    private final CustomerRepository customerRepository;
+    private final CurrentCustomerResolver currentCustomerResolver;
 
     public TransactionService(
             TransactionRepository transactionRepository,
             AccountRepository accountRepository,
-            CustomerRepository customerRepository
+            CurrentCustomerResolver currentCustomerResolver
     ){
         this.transactionRepository = transactionRepository;
         this.accountRepository = accountRepository;
-        this.customerRepository = customerRepository;
+        this.currentCustomerResolver = currentCustomerResolver;
     }
 
     @Transactional(readOnly = true)
@@ -47,17 +45,15 @@ public class TransactionService {
             LocalDate from,
             LocalDate to) {
 
-        // TO DO REPLACE EXCEPTION
         AccountEntity account = accountRepository.findByIban(iban)
-                .orElseThrow(() -> new IllegalArgumentException("Account not found for IBAN: " + iban));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Account not found for IBAN: " + iban));
 
-        CustomerEntity current = getCurrentCustomer();
+        CustomerEntity current = currentCustomerResolver.currentCustomer();
         boolean isAdmin = current.getRole() == CustomerRole.ADMIN;
         boolean isOwner = account.getCustomer().getId().equals(current.getId());
 
-        // TO DO REPLACE EXCEPTION
         if (!isAdmin && !isOwner) {
-            throw new SecurityException("Access denied to transactions for IBAN: " + iban);
+            throw new BusinessException(ErrorCodes.FORBIDDEN, "Access denied to transactions for IBAN: " + iban);
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
@@ -74,9 +70,8 @@ public class TransactionService {
 
         Page<TransactionEntity> resultPage;
         if (fromInstant != null && toInstant != null) {
-            // TO DO REPLACE EXCEPTION
             if (fromInstant.isAfter(toInstant)) {
-                throw new IllegalArgumentException("'from' date must not be after 'to' date");
+                throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "'from' date must not be after 'to' date");
             }
             resultPage = transactionRepository.findByAccount_IdAndCreatedAtBetween(accountId, fromInstant, toInstant, pageable);
         } else if (fromInstant != null) {
@@ -95,20 +90,6 @@ public class TransactionService {
                 resultPage.getTotalPages(),
                 resultPage.isLast()
         );
-    }
-
-    private CustomerEntity getCurrentCustomer(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        //TO DO REPLACE EXCEPTION
-        if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {
-            throw new IllegalStateException("No authenticated user found");
-        }
-
-        String email = authentication.getName().trim().toLowerCase();
-        //TO DO REPLACE EXCEPTION
-        return customerRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Authenticated customer not found"));
     }
 
     private TransactionResponse toResponse(TransactionEntity tx) {
