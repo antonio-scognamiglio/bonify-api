@@ -24,7 +24,8 @@ public class CustomerService {
     private final CurrentCustomerResolver currentCustomerResolver;
     private final PasswordEncoder passwordEncoder;
 
-    public CustomerService(CustomerRepository customerRepository, CurrentCustomerResolver currentCustomerResolver, PasswordEncoder passwordEncoder) {
+    public CustomerService(CustomerRepository customerRepository, CurrentCustomerResolver currentCustomerResolver,
+            PasswordEncoder passwordEncoder) {
         this.customerRepository = customerRepository;
         this.currentCustomerResolver = currentCustomerResolver;
         this.passwordEncoder = passwordEncoder;
@@ -60,11 +61,12 @@ public class CustomerService {
     public void changeMyPassword(ChangePasswordRequest request) {
         CustomerEntity current = currentCustomerResolver.currentCustomer();
 
-        if (!matchesHash(request.currentPassword(), current.getPassword())) {
+        if (!passwordEncoder.matches(request.currentPassword(), current.getPassword())) {
             throw new BusinessException(ErrorCodes.WRONG_CURRENT_PASSWORD, "Current password is incorrect");
         }
         if (request.currentPassword().equals(request.newPassword())) {
-            throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "New password must be different from current password");
+            throw new BusinessException(ErrorCodes.VALIDATION_ERROR,
+                    "New password must be different from current password");
         }
 
         current.setPassword(passwordEncoder.encode(request.newPassword()));
@@ -101,7 +103,6 @@ public class CustomerService {
                 customer.getTaxCode(),
                 customer.getRole().name(),
                 customer.getCreatedAt(),
-                customer.getUpdatedAt()
-        );
+                customer.getUpdatedAt());
     }
 }
