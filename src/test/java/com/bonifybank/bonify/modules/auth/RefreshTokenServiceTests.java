@@ -35,7 +35,7 @@ class RefreshTokenServiceTests {
 
     private final RefreshTokenRepository repository = mock(RefreshTokenRepository.class);
     private final JwtProperties properties = new JwtProperties(
-            "test-secret-that-is-at-least-32-bytes-long", "bonify", Duration.ofMinutes(60), REFRESH_VALIDITY);
+            "test-secret-that-is-at-least-32-bytes-long", "bonify", Duration.ofMinutes(5), REFRESH_VALIDITY);
     private final CustomerEntity customer = CustomerEntity.builder()
             .id(UUID.randomUUID())
             .email("anna@example.com")

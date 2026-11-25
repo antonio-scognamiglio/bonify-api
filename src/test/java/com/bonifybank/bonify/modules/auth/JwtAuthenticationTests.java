@@ -69,13 +69,13 @@ class JwtAuthenticationTests {
         String token = jwtService.generateToken(customer);
         Jwt jwt = jwtDecoder.decode(token);
 
-        assertThat(jwtService.getExpirationSeconds()).isEqualTo(3600);
+        assertThat(jwtService.getExpirationSeconds()).isEqualTo(300);
         assertThat(jwt.getSubject()).isEqualTo(customer.getId().toString());
         assertThat(jwt.getClaimAsString("role")).isEqualTo("CUSTOMER");
         assertThat(jwt.getClaimAsString("iss")).isEqualTo("bonify");
         assertThat(jwt.getId()).isNotBlank();
         assertThat(jwt.getHeaders()).containsEntry("alg", "HS256").containsEntry("typ", "JWT");
-        assertThat(Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt())).isEqualTo(Duration.ofMinutes(60));
+        assertThat(Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt())).isEqualTo(Duration.ofMinutes(5));
         // No personal data in the token
         assertThat(jwt.getClaims()).doesNotContainKeys("email", "password");
     }
@@ -111,7 +111,7 @@ class JwtAuthenticationTests {
 
     @Test
     void expiredTokenIsUnauthorized() throws Exception {
-        // Issued 2 hours ago with a 60-minute validity (beyond the default 60s clock skew)
+        // Issued 2 hours ago with a 5-minute validity (beyond the default 60s clock skew)
         Clock twoHoursAgo = Clock.fixed(Instant.now().minus(Duration.ofHours(2)), ZoneOffset.UTC);
         String token = new JwtService(jwtEncoder, properties, twoHoursAgo)
                 .generateToken(customer(CustomerRole.CUSTOMER));
