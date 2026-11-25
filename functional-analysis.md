@@ -68,7 +68,7 @@ The MVP is backend-only: the user interface is **Swagger UI**, served by the app
 | **Admin** | Back-office user, role `ADMIN` | Valid JWT with role `ADMIN` |
 
 
-The first admin is created by a seed data migration in the `dev` profile and from environment variables in `prod`. Admins cannot be created through the public API.
+There is a single admin account, created directly in the database. Admins cannot be created or promoted through the public API, and an admin cannot change other customers' data, password or role (FR-CUS-05).
 
 ### 2.1 Permission matrix
 
@@ -82,7 +82,8 @@ The first admin is created by a seed data migration in the `dev` profile and fro
 | Deposit, withdraw on own account | — | ✅ | — |
 | Send a transfer from own account | — | ✅ | — |
 | View a transfer | — | if sender or receiver | ✅ |
-| List customers, edit any customer | — | — | ✅ |
+| List customers | — | — | ✅ |
+| Edit another customer's data, password or role | — | — | — |
 | Block or unblock an account | — | — | ✅ |
 
 ---
@@ -153,9 +154,9 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 
 **FR-CUS-02 Update own personal data**
 - **Actor:** Customer, Admin
-- **Input:** any of `firstName`, `lastName`, `email` (partial update: fields not sent stay unchanged).
-- **Validation:** same rules as registration; the new email must not belong to another customer (BR-10).
-- **Behaviour:** only these three fields can change. `id`, `role`, `password` and `createdAt` are never updated through this operation, even if sent. The current token stays valid after an email change, because its subject is the customer id.
+- **Input:** any of `firstName`, `lastName`, `email`, `phoneNumber` (partial update: fields not sent stay unchanged).
+- **Validation:** same rules as registration; the new email is stored in lower case and must not belong to another customer (BR-10).
+- **Behaviour:** only these four fields can change. `id`, `role`, `password` and `createdAt` are never updated through this operation, even if sent. The current token stays valid after an email change, because its subject is the customer id.
 - **Output:** `200 OK` with the updated profile.
 - **Errors:** `400` invalid input; `409` email already in use.
 
@@ -169,18 +170,18 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 **FR-CUS-04 List customers**
 - **Actor:** Admin
 - **Input:** `page` (default 0), `size` (default 20, max 100)
-- **Output:** `200 OK` with a page of customer profiles, sorted by `createdAt` descending.
+- **Output:** `200 OK` with a page of customer profiles, sorted by `createdAt` descending: `content`, `page`, `size`, `totalElements`, `totalPages`, `last`.
+- **Errors:** `400` `page` negative or `size` outside 1–100.
 
-**FR-CUS-05 Update a customer**
-- **Actor:** Admin
-- **Input:** customer `id` in the path; any of `firstName`, `lastName`, `email`.
-- **Behaviour and validation:** same as FR-CUS-02. An admin cannot change another customer's password or role in the MVP.
-- **Errors:** `400`, `404` customer not found, `409` email already in use.
+**FR-CUS-05 No admin edit of other customers**
+- Every customer, admin included, edits only their own data (FR-CUS-02, FR-CUS-03, BR-12).
+- There is no endpoint to change another customer's data, password or role. The single admin account is created directly in the database.
 
 ### M3 — Accounts
 
 **FR-ACC-01 Open an account**
 - **Actor:** Customer
+- **Input:** none (no request body): every account is in `EUR` in the MVP.
 - **Behaviour:** creates an account owned by the caller, with a generated unique IBAN, balance `0.00`, currency `EUR`, status `ACTIVE`.
 - **Output:** `201 Created` with the account.
 
@@ -205,7 +206,7 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 - **Actor:** Account owner
 - **Input:** `amount`, optional `description`
 - **Validation:** BR-01, BR-02 (balance cannot go negative), BR-07.
-- **Behaviour:** decreases the balance and records a `WITHDRAWAL` transaction, in one database transaction.
+- **Behaviour:** decreases the balance and records a `WITHDRAW` transaction, in one database transaction.
 - **Output:** `200 OK` with the updated account.
 - **Errors:** `400`, `403`, `404`, `422` insufficient funds or account blocked.
 
@@ -222,7 +223,7 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 - **Actor:** Account owner, Admin
 - **Input:** `page` (default 0), `size` (default 20, max 100), optional `from` and `to` dates (ISO `YYYY-MM-DD`, inclusive)
 - **Output:** `200 OK` with a page of transactions, newest first: `id`, `type`, `amount`, `balanceAfter`, `description`, `transferId` (if any), `createdAt`.
-- **Errors:** `400` `from` after `to`; `403`; `404`.
+- **Errors:** `400` `from` after `to`, invalid date, `page` negative or `size` outside 1–100; `403`; `404`.
 
 **FR-TRX-02 Ledger integrity**
 - Every balance change creates exactly one transaction line, in the same database transaction as the balance update.
@@ -248,6 +249,7 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 **FR-TRF-02 Idempotent retry**
 - Same `Idempotency-Key` and same body as a completed transfer → `200 OK` with the original transfer. No money moves again and no new lines are created (BR-04).
 - Same key, different body → `409 Conflict`.
+- Same key sent by another customer, even with the same body → `409 Conflict`: the original transfer is never returned to someone who did not send it.
 - A rejected request (4xx) does not consume the key: the client may retry with the same key once the problem is fixed.
 
 **FR-TRF-03 View a transfer**
@@ -363,7 +365,7 @@ A token is **active** when `used_at` and `revoked_at` are null and `expires_at` 
 |---|---|---|
 | id | bigint | primary key |
 | account_id | FK → account | required, indexed with created_at |
-| type | varchar(20) | `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT` |
+| type | varchar(20) | `DEPOSIT`, `WITHDRAW`, `TRANSFER_IN`, `TRANSFER_OUT` |
 | amount | numeric(19,2) | always positive; the type gives the sign |
 | balance_after | numeric(19,2) | balance right after this line |
 | transfer_id | FK → transfer | set only for transfer lines |
@@ -393,7 +395,6 @@ Base path `/api/v1`: the API version is the first segment after `/api` (`spring.
 | 4 | PATCH | `/api/customers/me` | Update own personal data | Customer, Admin | FR-CUS-02 |
 | 5 | PUT | `/api/customers/me/password` | Change own password | Customer, Admin | FR-CUS-03 |
 | 6 | GET | `/api/customers` | List customers (paged) | Admin | FR-CUS-04 |
-| 7 | PATCH | `/api/customers/{id}` | Update a customer | Admin | FR-CUS-05 |
 | 8 | POST | `/api/accounts` | Open an account | Customer | FR-ACC-01 |
 | 9 | GET | `/api/accounts` | Own accounts | Customer | FR-ACC-02 |
 | 10 | GET | `/api/accounts/{iban}` | Account detail and balance | Owner, Admin | FR-ACC-03 |
@@ -630,7 +631,7 @@ Feature: Ownership
 | FR-AUTH-01, 02, 03 | 1, 2 | Registration, login, 401 without token |
 | FR-AUTH-04, 05, 06 | 17, 18 | Rotation, expired or revoked token, reuse revokes the session, logout, expired access token ignored on refresh |
 | FR-CUS-01, 02, 03 | 3, 4, 5 | Profile update, email conflict, role not changeable, password change |
-| FR-CUS-04, 05 | 6, 7 | Admin only (403 for customers) |
+| FR-CUS-04, 05 | 6 | Admin only (403 for customers); no route edits another customer |
 | FR-ACC-01 … 05 | 8–12 | Deposit, withdrawal, insufficient funds, ownership |
 | FR-ACC-06 | 14 | Block, then deposit fails with 422 |
 | FR-TRX-01, 02 | 13 | Pagination, date filter, ledger sum equals balance |
