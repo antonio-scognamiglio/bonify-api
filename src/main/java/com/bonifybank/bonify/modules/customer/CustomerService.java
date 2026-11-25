@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -18,9 +19,11 @@ import java.util.UUID;
 @Service
 public class CustomerService {
     private final CustomerRepository customerRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public CustomerService (CustomerRepository customerRepository) {
+    public CustomerService (CustomerRepository customerRepository, PasswordEncoder passwordEncoder) {
         this.customerRepository = customerRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
@@ -54,7 +57,7 @@ public class CustomerService {
         CustomerEntity current = getCurrentCustomer();
 
         //TO DO REPLACE EXCEPTION
-        if (!matchesHash(request.currentPassword(), current.getPassword())) {
+        if (!passwordEncoder.matches(request.currentPassword(), current.getPassword())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
         //TO DO REPLACE EXCEPTION
@@ -62,7 +65,7 @@ public class CustomerService {
             throw new IllegalArgumentException("New password must be different from current password");
         }
 
-        current.setPassword(hashPassword(request.newPassword()));
+        current.setPassword(passwordEncoder.encode(request.newPassword()));
         customerRepository.save(current);
     }
 
@@ -98,15 +101,7 @@ public class CustomerService {
         return customerRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("Authenticated customer not found"));
     }
-
-    private boolean matchesHash(String rawPassword, String storedHash) {
-        return hashPassword(rawPassword).equals(storedHash);
-    }
-
-    //TO DO FIX IMPLEMENT THIS METHOD
-    private String hashPassword(String rawPassword) {
-        throw new UnsupportedOperationException("Password hashing method not configured yet");
-    }
+    
 
     private CustomerResponse toResponse(CustomerEntity customer) {
         return new CustomerResponse(
