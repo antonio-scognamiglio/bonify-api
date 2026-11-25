@@ -7,7 +7,7 @@ import com.bonifybank.bonify.modules.account.AccountRepository;
 import com.bonifybank.bonify.modules.customer.CurrentCustomerResolver;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
-import com.bonifybank.bonify.modules.transaction.dto.PagedResponse;
+import com.bonifybank.bonify.common.dto.PagedResponse;
 import com.bonifybank.bonify.modules.transaction.dto.TransactionResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -82,14 +82,7 @@ public class TransactionService {
             resultPage = transactionRepository.findByAccount_Id(accountId, pageable);
         }
 
-        return new PagedResponse<>(
-                resultPage.getContent().stream().map(this::toResponse).toList(),
-                resultPage.getNumber(),
-                resultPage.getSize(),
-                resultPage.getTotalElements(),
-                resultPage.getTotalPages(),
-                resultPage.isLast()
-        );
+        return PagedResponse.from(resultPage, this::toResponse);
     }
 
     private TransactionResponse toResponse(TransactionEntity tx) {
