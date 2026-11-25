@@ -30,11 +30,11 @@ public class AuthController {
     // FR-AUTH-01: public registration, returns 201 with the profile (no password)
     @PostMapping(path = "/register", version = "1+")
     public ResponseEntity<CustomerProfile> register(@Validated @RequestBody RegisterRequest request) {
-        CustomerEntity saved = authService.register(
-                request.firstName(), request.lastName(), request.email(), request.password());
+        CustomerEntity saved = authService.register(request.firstName(), request.lastName(), request.email(),
+                request.phoneNumber(), request.taxCode(), request.password());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new CustomerProfile(
-                        saved.getId(), saved.getFirstName(), saved.getLastName(), saved.getEmail()));
+                .body(new CustomerProfile(saved.getId(), saved.getFirstName(), saved.getLastName(),
+                        saved.getEmail(), saved.getPhoneNumber(), saved.getTaxCode()));
     }
 
     // FR-AUTH-02: login returns 200 with the access token and the refresh token

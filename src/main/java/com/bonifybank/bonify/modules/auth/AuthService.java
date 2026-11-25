@@ -35,18 +35,26 @@ public class AuthService {
      * FR-AUTH-01: public registration always creates a CUSTOMER (admins come from seed data only).
      *
      * @return the saved customer; map it to the profile DTO (never expose the password hash)
-     * @throws BusinessException EMAIL_ALREADY_USED if the email is already registered
+     * @throws BusinessException EMAIL_ALREADY_USED if the email is already registered,
+     *                           TAX_CODE_ALREADY_USED if the tax code is already registered
      */
     @Transactional
-    public CustomerEntity register(String firstName, String lastName, String email, String rawPassword) {
+    public CustomerEntity register(String firstName, String lastName, String email, String phoneNumber,
+            String taxCode, String rawPassword) {
         String normalizedEmail = normalizeEmail(email);
+        String normalizedTaxCode = taxCode.strip().toUpperCase(Locale.ROOT);
         if (customerRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCodes.EMAIL_ALREADY_USED, "Email already registered");
+        }
+        if (customerRepository.existsByTaxCode(normalizedTaxCode)) {
+            throw new BusinessException(ErrorCodes.TAX_CODE_ALREADY_USED, "Tax code already registered");
         }
         CustomerEntity customer = CustomerEntity.builder()
                 .firstName(firstName.strip())
                 .lastName(lastName.strip())
                 .email(normalizedEmail)
+                .phoneNumber(phoneNumber.strip())
+                .taxCode(normalizedTaxCode)
                 .password(passwordEncoder.encode(rawPassword))
                 .role(CustomerRole.CUSTOMER)
                 .build();

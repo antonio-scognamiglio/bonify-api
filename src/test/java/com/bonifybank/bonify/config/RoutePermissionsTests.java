@@ -69,7 +69,7 @@ class RoutePermissionsTests {
 
     @BeforeEach
     void stubAuthService() {
-        when(authService.register(anyString(), anyString(), anyString(), anyString()))
+        when(authService.register(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(CustomerEntity.builder().id(java.util.UUID.randomUUID()).build());
         AuthTokens tokens = new AuthTokens("test-token", "test-refresh-token");
         when(authService.login(anyString(), anyString())).thenReturn(tokens);
@@ -128,7 +128,8 @@ class RoutePermissionsTests {
         if (method == HttpMethod.POST && path.startsWith("/api/v1/auth/")) {
             String body;
             if (path.endsWith("/register")) {
-                body = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\",\"password\":\"password123\"}";
+                body = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\","
+                        + "\"phoneNumber\":\"+393401234567\",\"taxCode\":\"DOEJHN90A01H501X\",\"password\":\"password123\"}";
             } else if (path.endsWith("/login")) {
                 body = "{\"email\":\"john@example.com\",\"password\":\"password123\"}";
             } else {

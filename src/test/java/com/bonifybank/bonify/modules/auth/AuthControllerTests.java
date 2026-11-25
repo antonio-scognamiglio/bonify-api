@@ -89,25 +89,36 @@ class AuthControllerTests {
     void registerReturnsProfileWithoutPassword() throws Exception {
         when(customerRepository.existsByEmail(anyString())).thenReturn(false);
 
-        String body = """
-                {"firstName":"Anna","lastName":"Rossi","email":"Anna@Example.COM","password":"password123"}
-                """;
         mockMvc.perform(
                         post(REGISTER)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(body.getBytes(StandardCharsets.UTF_8)))
+                                .content(registerBody("Anna@Example.COM", "+39 340 1234567", "rssnna90a41h501n",
+                                        "password123")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.firstName").value("Anna"))
                 .andExpect(jsonPath("$.email").value("anna@example.com"))
+                .andExpect(jsonPath("$.phoneNumber").value("+39 340 1234567"))
+                .andExpect(jsonPath("$.taxCode").value("RSSNNA90A41H501N"))
                 .andExpect(jsonPath("$.password").doesNotExist());
     }
 
     @Test
     void registerRejectsInvalidInput() throws Exception {
         // password too short (min 8)
+        mockMvc.perform(
+                        post(REGISTER)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(registerBody("anna@example.com", "+393401234567", "RSSNNA90A41H501N",
+                                        "1234567")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void registerRequiresPhoneAndTaxCode() throws Exception {
         String body = """
-                {"firstName":"Anna","lastName":"Rossi","email":"anna@example.com","password":"1234567"}
+                {"firstName":"Anna","lastName":"Rossi","email":"anna@example.com","password":"password123"}
                 """;
         mockMvc.perform(
                         post(REGISTER)
@@ -118,18 +129,52 @@ class AuthControllerTests {
     }
 
     @Test
+    void registerRejectsInvalidTaxCodeAndPhoneFormat() throws Exception {
+        // "Z" is not a valid month letter
+        mockMvc.perform(post(REGISTER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerBody("anna@example.com", "+393401234567", "RSSNNA90Z41H501N", "password123")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(post(REGISTER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerBody("anna@example.com", "call-me", "RSSNNA90A41H501N", "password123")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void registerRejectsEmailAlreadyUsed() throws Exception {
         when(customerRepository.existsByEmail("anna@example.com")).thenReturn(true);
 
-        String body = """
-                {"firstName":"Anna","lastName":"Rossi","email":"anna@example.com","password":"password123"}
-                """;
         mockMvc.perform(
                         post(REGISTER)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(body.getBytes(StandardCharsets.UTF_8)))
+                                .content(registerBody("anna@example.com", "+393401234567", "RSSNNA90A41H501N",
+                                        "password123")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_USED"));
+    }
+
+    @Test
+    void registerRejectsTaxCodeAlreadyUsed() throws Exception {
+        when(customerRepository.existsByEmail(anyString())).thenReturn(false);
+        when(customerRepository.existsByTaxCode("RSSNNA90A41H501N")).thenReturn(true);
+
+        mockMvc.perform(
+                        post(REGISTER)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(registerBody("anna@example.com", "+393401234567", "rssnna90a41h501n",
+                                        "password123")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TAX_CODE_ALREADY_USED"));
+    }
+
+    private static byte[] registerBody(String email, String phoneNumber, String taxCode, String password) {
+        return ("{\"firstName\":\"Anna\",\"lastName\":\"Rossi\",\"email\":\"" + email
+                + "\",\"phoneNumber\":\"" + phoneNumber + "\",\"taxCode\":\"" + taxCode
+                + "\",\"password\":\"" + password + "\"}").getBytes(StandardCharsets.UTF_8);
     }
 
     @Test

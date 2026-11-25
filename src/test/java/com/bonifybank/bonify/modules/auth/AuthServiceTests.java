@@ -43,13 +43,16 @@ class AuthServiceTests {
     }
 
     @Test
-    void registerCreatesCustomerWithHashedPasswordAndLowerCaseEmail() {
-        CustomerEntity saved = authService.register(" Anna ", "Rossi", "Anna@Example.COM", "password123");
+    void registerCreatesCustomerWithHashedPasswordAndNormalizedFields() {
+        CustomerEntity saved = authService.register(" Anna ", "Rossi", "Anna@Example.COM", " +393401234567 ",
+                " rssnna90a41h501n ", "password123");
 
         verify(customerRepository).save(saved);
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getFirstName()).isEqualTo("Anna");
         assertThat(saved.getEmail()).isEqualTo("anna@example.com");
+        assertThat(saved.getPhoneNumber()).isEqualTo("+393401234567");
+        assertThat(saved.getTaxCode()).isEqualTo("RSSNNA90A41H501N");
         assertThat(saved.getRole()).isEqualTo(CustomerRole.CUSTOMER);
         assertThat(saved.getPassword()).isNotEqualTo("password123");
         assertThat(passwordEncoder.matches("password123", saved.getPassword())).isTrue();
@@ -59,9 +62,21 @@ class AuthServiceTests {
     void registerRejectsEmailAlreadyUsedIgnoringCase() {
         when(customerRepository.existsByEmail("anna@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.register("Anna", "Rossi", "ANNA@example.com", "password123"))
+        assertThatThrownBy(() -> authService.register("Anna", "Rossi", "ANNA@example.com", "+393401234567",
+                "RSSNNA90A41H501N", "password123"))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.EMAIL_ALREADY_USED));
+        verify(customerRepository, never()).save(any());
+    }
+
+    @Test
+    void registerRejectsTaxCodeAlreadyUsedIgnoringCase() {
+        when(customerRepository.existsByTaxCode("RSSNNA90A41H501N")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register("Anna", "Rossi", "anna@example.com", "+393401234567",
+                "rssnna90a41h501n", "password123"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(ErrorCodes.TAX_CODE_ALREADY_USED));
         verify(customerRepository, never()).save(any());
     }
 
