@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -54,6 +55,16 @@ public class CustomerService {
 
         if (request.phoneNumber() != null && !request.phoneNumber().isEmpty()) {
             current.setPhoneNumber(request.phoneNumber().trim());
+        }
+
+        if (request.email() != null && !request.email().isBlank()) {
+            // Stored in lower case like at registration (FR-AUTH-01)
+            String newEmail = request.email().strip().toLowerCase(Locale.ROOT);
+            if (!newEmail.equals(current.getEmail()) && customerRepository.existsByEmail(newEmail)) {
+                throw new BusinessException(ErrorCodes.EMAIL_ALREADY_USED, "Email already registered");
+            }
+            // The token stays valid: its subject is the customer id, not the email
+            current.setEmail(newEmail);
         }
 
         CustomerEntity saved = customerRepository.save(current);
