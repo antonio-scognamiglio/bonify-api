@@ -237,17 +237,18 @@ Errors follow the RFC 7807 `ProblemDetail` format, with a stable `code` field:
 ## Testing
 
 ```bash
-docker compose up -d        # PostgreSQL, needed by BonifyApplicationTests
+docker compose up -d        # PostgreSQL, needed by the context and integration tests
 mvn verify
 ```
 
 | Type | What it covers |
 |---|---|
-| Unit | Services and business rules, with Mockito |
-| Web layer | Controllers, validation, security rules and error format, with MockMvc and mocked repositories |
+| Unit | Services and business rules, with Mockito (`*ServiceTests`) |
+| Web layer | Controllers, validation, security rules and error format, with MockMvc and mocked services (`*ControllerTests`, `config/`) |
 | Context | `BonifyApplicationTests` starts the whole application against the PostgreSQL configured in `.env` |
+| Integration | `integration/*IntegrationTests`: the acceptance criteria of the functional analysis (section 10), end to end over HTTP with real tokens against PostgreSQL |
 
-Planned: the concurrency test of NFR-03 (100 parallel transfers between the same accounts: no deadlock, no negative balance, total money unchanged).
+The integration tests include the concurrency test of NFR-03 (100 parallel transfers between the same accounts: no deadlock, no negative balance, total money unchanged, ledger sum equal to the balance) and the concurrent cases of idempotency, refresh, login and registration. They create their own customers with random data and delete them at the end, so they can run against a database that already contains data.
 
 ---
 

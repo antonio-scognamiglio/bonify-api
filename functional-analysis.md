@@ -77,7 +77,7 @@ There is a single admin account, created directly in the database. Admins cannot
 | Register, log in | ✅ | — | — |
 | View and update own profile, change own password | — | ✅ | ✅ |
 | Open an account | — | ✅ | — |
-| View own accounts and their history | — | ✅ | ✅ |
+| View own accounts and their history | — | ✅ | — (owns none, A-02) |
 | View any account and its history | — | — | ✅ |
 | Deposit, withdraw on own account | — | ✅ | — |
 | Send a transfer from own account | — | ✅ | — |
@@ -103,7 +103,7 @@ There is a single admin account, created directly in the database. Admins cannot
 
 ## 4. Functional requirements
 
-Each requirement has an ID used in tests, pull requests and the traceability matrix (section 10).
+Each requirement has an ID used in tests, pull requests and the traceability matrix (section 11).
 
 ### M1 — Authentication
 
@@ -130,7 +130,7 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 **FR-AUTH-04 Refresh the session**
 - **Actor:** Guest (holder of a refresh token)
 - **Input:** `refreshToken`
-- **Behaviour:** rotation. The presented token is marked as used and swapped for a new access token and a new refresh token in the same family; the new refresh token gets a fresh 7-day validity. Marking the token as used is atomic, so two concurrent refreshes with the same token cannot both succeed: the loser gets `401` without revoking the session (it is most likely the same client, e.g. two tabs).
+- **Behaviour:** rotation. The presented token is marked as used and swapped for a new access token and a new refresh token in the same family; the new refresh token gets a fresh 7-day validity. Marking the token as used is atomic, so two concurrent refreshes with the same token cannot both succeed: the loser gets `401` without revoking the session (it is most likely the same client, e.g. two tabs). This applies only while the two requests overlap: a request that presents the token after the rotation has been committed is a reuse and revokes the session (FR-AUTH-06).
 - **Output:** `200 OK`, same body as FR-AUTH-02.
 - **Errors:** `400` missing token; `401` unknown, expired, already used or revoked token (same message in every case). The client must then log in again.
 
@@ -280,7 +280,7 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 | BR-09 | Referenced customers, accounts and transfers must exist | `404` |
 | BR-10 | Email is unique across customers, also when it is changed | `409` |
 | BR-11 | A password change needs the correct current password; the new one has at least 8 characters | `400` |
-| BR-12 | A customer edits only their own data; other customers' data only by an admin | `403` |
+| BR-12 | A customer, admin included, edits only their own data: no endpoint edits another customer (FR-CUS-05) | `404` (no such route) |
 
 Money is always handled as `BigDecimal` in code and `NUMERIC(19,2)` in the database, never as floating point.
 
@@ -306,13 +306,13 @@ erDiagram
 
 | Field | Type | Rules |
 |---|---|---|
-| id | UUID / bigint | primary key |
+| id | UUID | primary key |
 | first_name | varchar(50) | required |
 | last_name | varchar(50) | required |
 | email | varchar(254) | required, unique, lower case |
 | phone_number | varchar(20) | required |
 | tax_code | varchar(16) | required, unique, upper case |
-| password_hash | varchar(100) | BCrypt hash |
+| password | varchar(100) | BCrypt hash, never the clear text |
 | role | varchar(20) | `CUSTOMER` or `ADMIN` |
 | created_at | timestamptz | set on creation |
 | updated_at | timestamptz | set on every update |
@@ -355,7 +355,7 @@ A token is **active** when `used_at` and `revoked_at` are null and `expires_at` 
 | amount | numeric(19,2) | `CHECK (amount > 0)` |
 | description | varchar(140) | optional |
 | idempotency_key | varchar(64) | required, unique |
-| request_hash | varchar(64) | hash of the request body, to detect a reused key with a different body |
+| request | varchar(64) | SHA-256 (hex) of the request body, to detect a reused key with a different body |
 | status | varchar(20) | `COMPLETED` |
 | created_at | timestamptz | |
 
@@ -469,7 +469,7 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 
 ```json
 {
-  "type": "https://minibanca.example/errors/insufficient-funds",
+  "type": "https://bonify.example/errors/insufficient-funds",
   "title": "Insufficient funds",
   "status": 422,
   "detail": "Account IT60X0542811101000000000001 has 100.00 EUR, 150.00 EUR requested",
@@ -480,7 +480,7 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Invalid or missing fields (with a list of field errors) |
+| 400 | `VALIDATION_ERROR` | Invalid or missing fields; the body also carries `errors`, a list of `{ "field", "message" }` |
 | 400 | `SAME_ACCOUNT` | Transfer source equals destination |
 | 400 | `WRONG_CURRENT_PASSWORD` | Password change with a wrong current password |
 | 401 | `UNAUTHORIZED` | Missing, invalid or expired token; wrong credentials |
