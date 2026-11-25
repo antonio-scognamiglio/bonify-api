@@ -3,7 +3,6 @@ package com.bonifybank.bonify.modules.customer;
 import com.bonifybank.bonify.modules.auth.RefreshTokenService;
 import com.bonifybank.bonify.exception.BusinessException;
 import com.bonifybank.bonify.exception.ErrorCodes;
-import com.bonifybank.bonify.modules.customer.dto.AdminUpdateCustomerRequest;
 import com.bonifybank.bonify.modules.customer.dto.ChangePasswordRequest;
 import com.bonifybank.bonify.modules.customer.dto.CustomerResponse;
 import com.bonifybank.bonify.modules.customer.dto.UpdateProfileRequest;
@@ -17,7 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.UUID;
+import java.util.Locale;
 
 @Service
 public class CustomerService {
@@ -56,6 +55,16 @@ public class CustomerService {
             current.setPhoneNumber(request.phoneNumber().trim());
         }
 
+        if (request.email() != null && !request.email().isBlank()) {
+            // Stored in lower case like at registration (FR-AUTH-01)
+            String newEmail = request.email().strip().toLowerCase(Locale.ROOT);
+            if (!newEmail.equals(current.getEmail()) && customerRepository.existsByEmail(newEmail)) {
+                throw new BusinessException(ErrorCodes.EMAIL_ALREADY_USED, "Email already registered");
+            }
+            // The token stays valid: its subject is the customer id, not the email
+            current.setEmail(newEmail);
+        }
+
         CustomerEntity saved = customerRepository.save(current);
         return toResponse(saved);
     }
@@ -82,20 +91,6 @@ public class CustomerService {
     public Page<CustomerResponse> listCustomers(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return customerRepository.findAll(pageable).map(this::toResponse);
-    }
-
-    @Transactional
-    public CustomerResponse updateCustomer(UUID id, AdminUpdateCustomerRequest request) {
-        CustomerEntity customer = customerRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Customer not found: " + id));
-
-        if (request.role() != null && !request.role().isBlank()) {
-            CustomerRole newRole = CustomerRole.valueOf(request.role().trim().toUpperCase());
-            customer.setRole(newRole);
-        }
-
-        CustomerEntity saved = customerRepository.save(customer);
-        return toResponse(saved);
     }
 
     private CustomerResponse toResponse(CustomerEntity customer) {

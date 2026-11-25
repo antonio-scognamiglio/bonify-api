@@ -4,11 +4,13 @@ import com.bonifybank.bonify.exception.BusinessException;
 import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.account.dto.AccountResponse;
 import com.bonifybank.bonify.modules.account.dto.CashOperationRequest;
-import com.bonifybank.bonify.modules.account.dto.OpenAccountRequest;
 import com.bonifybank.bonify.modules.account.dto.UpdateAccountStatusRequest;
 import com.bonifybank.bonify.modules.customer.CurrentCustomerResolver;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
+import com.bonifybank.bonify.modules.transaction.TransactionEntity;
+import com.bonifybank.bonify.modules.transaction.TransactionRepository;
+import com.bonifybank.bonify.modules.transaction.TransactionType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,23 +24,26 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final CurrentCustomerResolver currentCustomerResolver;
+    private final TransactionRepository transactionRepository;
 
-    public AccountService(AccountRepository accountRepository, CurrentCustomerResolver currentCustomerResolver) {
+    public AccountService(AccountRepository accountRepository, CurrentCustomerResolver currentCustomerResolver,
+            TransactionRepository transactionRepository) {
         this.accountRepository = accountRepository;
         this.currentCustomerResolver = currentCustomerResolver;
+        this.transactionRepository = transactionRepository;
     }
 
+    // FR-ACC-01: no input, every account is in EUR in the MVP
     @Transactional
-    public AccountResponse openAccount(OpenAccountRequest request) {
+    public AccountResponse openAccount() {
         CustomerEntity customer = currentCustomerResolver.currentCustomer();
-        Currency currency = Currency.valueOf(request.currency().trim().toUpperCase());
 
         String iban = generateUniqueIban();
 
         AccountEntity account = AccountEntity.builder()
                 .iban(iban)
                 .balance(BigDecimal.ZERO)
-                .currency(currency)
+                .currency(Currency.EUR)
                 .status(AccountStatus.ACTIVE)
                 .customer(customer)
                 .build();
@@ -79,6 +84,7 @@ public class AccountService {
         account.setBalance(updateBalance);
 
         AccountEntity saved = accountRepository.save(account);
+        recordLine(saved, TransactionType.DEPOSIT, request);
         return toResponse(saved);
     }
 
@@ -94,8 +100,20 @@ public class AccountService {
         account.setBalance(updateBalance);
 
         AccountEntity saved = accountRepository.save(account);
-
+        recordLine(saved, TransactionType.WITHDRAW, request);
         return toResponse(saved);
+    }
+
+    // FR-TRX-02: every balance change creates exactly one ledger line, in the same database transaction
+    private void recordLine(AccountEntity account, TransactionType type, CashOperationRequest request) {
+        String description = request.description() != null ? request.description().trim() : null;
+        transactionRepository.save(TransactionEntity.builder()
+                .account(account)
+                .transactionType(type)
+                .amount(request.amount())
+                .balanceAfter(account.getBalance())
+                .description(description)
+                .build());
     }
 
     @Transactional

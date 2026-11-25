@@ -6,9 +6,9 @@ import java.math.BigDecimal;
 
 public record TransferRequest(
         @NotBlank @Size(min = 15, max = 34)
-        String sourceIban,
+        String fromIban,
         @NotBlank @Size(min = 15, max = 34)
-        String targetIban,
+        String toIban,
         @NotNull
         @DecimalMin(value = "0.01", inclusive = true)
         @Digits(integer = 15, fraction = 2)
