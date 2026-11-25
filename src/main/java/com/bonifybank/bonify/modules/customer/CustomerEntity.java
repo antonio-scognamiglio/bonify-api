@@ -30,10 +30,12 @@ public class CustomerEntity {
     @Column(name = "email", nullable = false, unique = true, length = 254)
     private String email;
 
-    @Column(name = "phone_number", length = 20)
+    // Required at registration (FR-AUTH-01)
+    @Column(name = "phone_number", nullable = false, length = 20)
     private String phoneNumber;
 
-    @Column(name ="tax_code", unique = true,length = 16)
+    // Required at registration (FR-AUTH-01), stored in upper case
+    @Column(name = "tax_code", nullable = false, unique = true, length = 16)
     private String taxCode;
 
     @Column(name="password", nullable = false,length = 100)

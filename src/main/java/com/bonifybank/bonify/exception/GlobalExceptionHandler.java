@@ -40,6 +40,7 @@ public class GlobalExceptionHandler {
         STATUS_BY_CODE.put(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN);
         STATUS_BY_CODE.put(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND);
         STATUS_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, HttpStatus.CONFLICT);
+        STATUS_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS,    HttpStatus.UNPROCESSABLE_CONTENT);
         STATUS_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED,        HttpStatus.UNPROCESSABLE_CONTENT);
@@ -53,6 +54,7 @@ public class GlobalExceptionHandler {
         TITLE_BY_CODE.put(ErrorCodes.FORBIDDEN, "Forbidden");
         TITLE_BY_CODE.put(ErrorCodes.NOT_FOUND, "Not found");
         TITLE_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, "Email already in use");
+        TITLE_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, "Tax code already in use");
         TITLE_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency key reused with a different body");
         TITLE_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS, "Insufficient funds");
         TITLE_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED, "Account blocked");

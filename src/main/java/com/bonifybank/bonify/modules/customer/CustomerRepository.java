@@ -11,4 +11,7 @@ public interface CustomerRepository extends JpaRepository<CustomerEntity, UUID> 
     Optional<CustomerEntity> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    // Tax codes are stored in upper case (FR-AUTH-01): callers must pass an upper-case tax code
+    boolean existsByTaxCode(String taxCode);
 }

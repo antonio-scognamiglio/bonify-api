@@ -1,5 +1,6 @@
 package com.bonifybank.bonify.modules.customer;
 
+import com.bonifybank.bonify.modules.auth.RefreshTokenService;
 import com.bonifybank.bonify.exception.BusinessException;
 import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.customer.dto.AdminUpdateCustomerRequest;
@@ -23,12 +24,14 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final CurrentCustomerResolver currentCustomerResolver;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokenService;
 
     public CustomerService(CustomerRepository customerRepository, CurrentCustomerResolver currentCustomerResolver,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder, RefreshTokenService refreshTokenService) {
         this.customerRepository = customerRepository;
         this.currentCustomerResolver = currentCustomerResolver;
         this.passwordEncoder = passwordEncoder;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional(readOnly = true)
@@ -71,6 +74,8 @@ public class CustomerService {
 
         current.setPassword(passwordEncoder.encode(request.newPassword()));
         customerRepository.save(current);
+        // Ends the current session: its refresh tokens can no longer be used (FR-AUTH-05)
+        refreshTokenService.revokeAll(current.getId());
     }
 
     @Transactional(readOnly = true)
