@@ -115,6 +115,21 @@ class TransferServiceTests {
                 .isEqualTo(ErrorCodes.IDEMPOTENCY_KEY_REUSED);
     }
 
+    @Test
+    void sameKeyAndBodyFromAnotherCustomerIsConflictAndRevealsNothing() {
+        transferService.sendTransfer(KEY, request("150.00"));
+        ArgumentCaptor<TransferEntity> captor = ArgumentCaptor.forClass(TransferEntity.class);
+        verify(transferRepository).save(captor.capture());
+        when(transferRepository.findByIdempotencyKey(KEY)).thenReturn(Optional.of(captor.getValue()));
+        CustomerEntity other = CustomerEntity.builder().id(UUID.randomUUID()).role(CustomerRole.CUSTOMER).build();
+        when(currentCustomerResolver.currentCustomer()).thenReturn(other);
+
+        assertThatThrownBy(() -> transferService.sendTransfer(KEY, request("150.00")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getCode())
+                .isEqualTo(ErrorCodes.IDEMPOTENCY_KEY_REUSED);
+    }
+
     private static TransferRequest request(String amount) {
         return new TransferRequest(FROM, TO, new BigDecimal(amount), "rent");
     }

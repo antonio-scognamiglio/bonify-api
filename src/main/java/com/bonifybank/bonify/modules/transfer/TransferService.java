@@ -66,12 +66,16 @@ public class TransferService {
         String targetIban = request.toIban().trim();
         String requestFingerPrint = fingerprint(sourceIban, targetIban, request.amount(), request.description());
 
+        CustomerEntity current = currentCustomerResolver.currentCustomer();
         Optional<TransferEntity> existing = transferRepository.findByIdempotencyKey(normalizedKey);
 
         if (existing.isPresent()) {
             TransferEntity savedTransfer = existing.get();
 
-            if (!savedTransfer.getRequest().equals(requestFingerPrint)) {
+            // The key belongs to the customer who sent the original transfer: anyone else gets the same
+            // 409 as a different body, so the original transfer is never revealed (BR-06)
+            boolean sameSender = savedTransfer.getFromAccount().getCustomer().getId().equals(current.getId());
+            if (!sameSender || !savedTransfer.getRequest().equals(requestFingerPrint)) {
                 throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
             }
             // FR-TRF-02: idempotent retry, nothing moves again
@@ -81,8 +85,6 @@ public class TransferService {
         if (sourceIban.equalsIgnoreCase(targetIban)) {
             throw new BusinessException(ErrorCodes.SAME_ACCOUNT, "Source and target IBAN must be different");
         }
-
-        CustomerEntity current = currentCustomerResolver.currentCustomer();
 
         List<String> orderedIbans = Stream.of(sourceIban, targetIban)
                 .sorted(Comparator.naturalOrder())
