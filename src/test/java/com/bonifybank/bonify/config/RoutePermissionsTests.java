@@ -26,7 +26,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import com.bonifybank.bonify.modules.account.AccountController;
 import com.bonifybank.bonify.modules.auth.AuthController;
 import com.bonifybank.bonify.modules.auth.AuthService;
+import com.bonifybank.bonify.modules.auth.AuthTokens;
 import com.bonifybank.bonify.modules.auth.JwtService;
+import com.bonifybank.bonify.modules.auth.RefreshTokenService;
 import com.bonifybank.bonify.modules.customer.CustomerController;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.transaction.TransactionController;
@@ -46,6 +48,7 @@ class RoutePermissionsTests {
     private static final int OK = 501;
     private static final int REGISTERED = 201;
     private static final int LOGIN_OK = 200;
+    private static final int NO_CONTENT = 204;
     private static final int UNAUTHORIZED = 401;
     private static final int FORBIDDEN = 403;
 
@@ -61,11 +64,16 @@ class RoutePermissionsTests {
     @MockitoBean
     JwtService jwtService;
 
+    @MockitoBean
+    RefreshTokenService refreshTokenService;
+
     @BeforeEach
     void stubAuthService() {
         when(authService.register(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(CustomerEntity.builder().id(java.util.UUID.randomUUID()).build());
-        when(authService.login(anyString(), anyString())).thenReturn("test-token");
+        AuthTokens tokens = new AuthTokens("test-token", "test-refresh-token");
+        when(authService.login(anyString(), anyString())).thenReturn(tokens);
+        when(authService.refresh(anyString())).thenReturn(tokens);
     }
 
     //                    method,           path,                                     guest,        customer,  admin
@@ -73,6 +81,8 @@ class RoutePermissionsTests {
         return Stream.of(
                 route(HttpMethod.POST,  "/api/v1/auth/register",                      REGISTERED,   REGISTERED, REGISTERED),
                 route(HttpMethod.POST,  "/api/v1/auth/login",                         LOGIN_OK,     LOGIN_OK,   LOGIN_OK),
+                route(HttpMethod.POST,  "/api/v1/auth/refresh",                       LOGIN_OK,     LOGIN_OK,   LOGIN_OK),
+                route(HttpMethod.POST,  "/api/v1/auth/logout",                        NO_CONTENT,   NO_CONTENT, NO_CONTENT),
                 route(HttpMethod.GET,   "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PATCH, "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PUT,   "/api/v1/customers/me/password",              UNAUTHORIZED, OK,        OK),
@@ -116,10 +126,15 @@ class RoutePermissionsTests {
     private static MockHttpServletRequestBuilder build(HttpMethod method, String path) {
         MockHttpServletRequestBuilder builder = request(method, path).header("Idempotency-Key", "test-key");
         if (method == HttpMethod.POST && path.startsWith("/api/v1/auth/")) {
-            builder.contentType(MediaType.APPLICATION_JSON)
-                    .content(path.endsWith("/register")
-                            ? "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\",\"password\":\"password123\"}"
-                            : "{\"email\":\"john@example.com\",\"password\":\"password123\"}");
+            String body;
+            if (path.endsWith("/register")) {
+                body = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\",\"password\":\"password123\"}";
+            } else if (path.endsWith("/login")) {
+                body = "{\"email\":\"john@example.com\",\"password\":\"password123\"}";
+            } else {
+                body = "{\"refreshToken\":\"test-refresh-token\"}";
+            }
+            builder.contentType(MediaType.APPLICATION_JSON).content(body);
         }
         return builder;
     }

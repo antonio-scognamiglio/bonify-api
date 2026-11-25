@@ -2,6 +2,7 @@ package com.bonifybank.bonify.config;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.regex.Pattern;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +12,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,6 +45,9 @@ public class SecurityConfig {
             "/v3/api-docs/**"
     };
 
+    private static final Pattern PUBLIC_AUTH_PATH =
+            Pattern.compile("^/api/v[^/]+/auth/(register|login|refresh|logout)$");
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtAuthenticationConverter)
             throws Exception {
@@ -51,17 +57,31 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_PATHS).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v*/auth/register", "/api/v*/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v*/auth/register", "/api/v*/auth/login",
+                                "/api/v*/auth/refresh", "/api/v*/auth/logout").permitAll()
                         // Error dispatch: without it a guest would get 401 instead of the real error
                         // (400, 409...)
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .bearerTokenResolver(bearerTokenResolver())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 .exceptionHandling(handler -> handler
                         .authenticationEntryPoint(this::unauthorized)
                         .accessDeniedHandler(this::forbidden));
         return http.build();
+    }
+
+    /**
+     * The public auth endpoints ignore the Authorization header. Otherwise an expired access token,
+     * attached by a client-side HTTP interceptor, would make /auth/refresh fail with 401 before
+     * reaching the controller: the bearer filter rejects invalid tokens even on permitAll paths.
+     */
+    private static BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
+        return request -> PUBLIC_AUTH_PATH.matcher(request.getRequestURI()).matches()
+                ? null
+                : delegate.resolve(request);
     }
 
     // Token missing/malformed/expired → 401 UNAUTHORIZED (RFC 7807)

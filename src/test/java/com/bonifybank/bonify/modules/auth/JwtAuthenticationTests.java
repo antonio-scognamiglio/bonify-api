@@ -123,7 +123,7 @@ class JwtAuthenticationTests {
     @Test
     void tokenSignedWithAnotherSecretIsUnauthorized() throws Exception {
         JwtProperties otherSecret = new JwtProperties("another-secret-that-is-at-least-32-bytes",
-                properties.issuer(), properties.expiration());
+                properties.issuer(), properties.expiration(), properties.refreshExpiration());
         JwtEncoder otherEncoder = NimbusJwtEncoder.withSecretKey(new SecretKeySpec(
                 otherSecret.secret().getBytes(StandardCharsets.UTF_8), "HmacSHA256")).build();
         String token = new JwtService(otherEncoder, otherSecret)
@@ -135,7 +135,8 @@ class JwtAuthenticationTests {
 
     @Test
     void tokenFromAnotherIssuerIsUnauthorized() throws Exception {
-        JwtProperties otherIssuer = new JwtProperties(SECRET, "someone-else", properties.expiration());
+        JwtProperties otherIssuer = new JwtProperties(SECRET, "someone-else", properties.expiration(),
+                properties.refreshExpiration());
         String token = new JwtService(jwtEncoder, otherIssuer)
                 .generateToken(customer(CustomerRole.CUSTOMER));
 

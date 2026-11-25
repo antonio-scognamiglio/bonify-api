@@ -26,6 +26,7 @@ class AuthServiceTests {
 
     private final CustomerRepository customerRepository = mock(CustomerRepository.class);
     private final JwtService jwtService = mock(JwtService.class);
+    private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     // Low cost factor: real hashing, fast tests
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
@@ -33,7 +34,7 @@ class AuthServiceTests {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(customerRepository, passwordEncoder, jwtService);
+        authService = new AuthService(customerRepository, passwordEncoder, jwtService, refreshTokenService);
         when(customerRepository.save(any())).thenAnswer(invocation -> {
             CustomerEntity saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
@@ -69,8 +70,20 @@ class AuthServiceTests {
         CustomerEntity customer = existingCustomer("password123");
         when(customerRepository.findByEmail("anna@example.com")).thenReturn(Optional.of(customer));
         when(jwtService.generateToken(customer)).thenReturn("jwt");
+        when(refreshTokenService.issue(customer)).thenReturn("refresh");
 
-        assertThat(authService.login(" Anna@Example.com ", "password123")).isEqualTo("jwt");
+        assertThat(authService.login(" Anna@Example.com ", "password123"))
+                .isEqualTo(new AuthTokens("jwt", "refresh"));
+    }
+
+    @Test
+    void refreshIssuesAccessTokenForTheRotatedSession() {
+        CustomerEntity customer = existingCustomer("password123");
+        when(refreshTokenService.rotate("old-refresh"))
+                .thenReturn(new RefreshTokenService.Rotation(customer, "new-refresh"));
+        when(jwtService.generateToken(customer)).thenReturn("jwt");
+
+        assertThat(authService.refresh("old-refresh")).isEqualTo(new AuthTokens("jwt", "new-refresh"));
     }
 
     @Test
@@ -86,6 +99,7 @@ class AuthServiceTests {
         assertThat(unknownEmail.getCode()).isEqualTo(ErrorCodes.UNAUTHORIZED);
         assertThat(wrongPassword.getMessage()).isEqualTo(unknownEmail.getMessage());
         verify(jwtService, never()).generateToken(any());
+        verify(refreshTokenService, never()).issue(any());
     }
 
     private BusinessException loginFailure(String email, String password) {

@@ -1,21 +1,32 @@
 package com.bonifybank.bonify.modules.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -23,6 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 
 import com.bonifybank.bonify.config.JwtConfig;
+import com.bonifybank.bonify.config.JwtProperties;
 import com.bonifybank.bonify.config.SecurityConfig;
 import com.bonifybank.bonify.config.WebConfig;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
@@ -34,7 +46,8 @@ import com.bonifybank.bonify.modules.customer.CustomerRole;
  * and a mocked repository (no database).
  */
 @WebMvcTest(AuthController.class)
-@Import({ WebConfig.class, SecurityConfig.class, JwtConfig.class, JwtService.class, AuthService.class })
+@Import({ WebConfig.class, SecurityConfig.class, JwtConfig.class, JwtService.class, AuthService.class,
+        RefreshTokenService.class })
 @TestPropertySource(properties = "bonify.jwt.secret=" + AuthControllerTests.SECRET)
 class AuthControllerTests {
 
@@ -42,12 +55,23 @@ class AuthControllerTests {
 
     private static final String REGISTER = "/api/v1/auth/register";
     private static final String LOGIN = "/api/v1/auth/login";
+    private static final String REFRESH = "/api/v1/auth/refresh";
+    private static final String LOGOUT = "/api/v1/auth/logout";
 
     @Autowired
     MockMvc mockMvc;
 
+    @Autowired
+    JwtEncoder jwtEncoder;
+
+    @Autowired
+    JwtProperties jwtProperties;
+
     @MockitoBean
     CustomerRepository customerRepository;
+
+    @MockitoBean
+    RefreshTokenRepository refreshTokenRepository;
 
     @BeforeEach
     void setUp() {
@@ -123,7 +147,111 @@ class AuthControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.tokenType").value("Bearer"))
-                .andExpect(jsonPath("$.expiresIn").value(3600));
+                .andExpect(jsonPath("$.expiresIn").value(3600))
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshExpiresIn").value(604800));
+
+        // A new session replaces the previous ones; the token is stored as a hash, never in clear
+        verify(refreshTokenRepository).revokeAllByCustomer(eq(customer.getId()), any());
+        ArgumentCaptor<RefreshTokenEntity> saved = ArgumentCaptor.forClass(RefreshTokenEntity.class);
+        verify(refreshTokenRepository).save(saved.capture());
+        assertThat(saved.getValue().getTokenHash()).hasSize(64);
+        assertThat(saved.getValue().getCustomer()).isSameAs(customer);
+    }
+
+    @Test
+    void refreshReturnsNewTokenPairEvenWithExpiredAccessTokenInHeader() throws Exception {
+        CustomerEntity customer = existingCustomer("password123");
+        RefreshTokenEntity stored = storedToken(customer, "old-refresh");
+        when(refreshTokenRepository.markUsed(eq(stored.getId()), any())).thenReturn(1);
+
+        // Clients often attach the (expired) access token to every call: it must be ignored here
+        String expiredAccessToken = new JwtService(jwtEncoder, jwtProperties,
+                Clock.fixed(Instant.now().minus(Duration.ofHours(2)), ZoneOffset.UTC)).generateToken(customer);
+
+        mockMvc.perform(post(REFRESH)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredAccessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody("old-refresh")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").value(not("old-refresh")));
+    }
+
+    @Test
+    void refreshWithUnknownTokenIsUnauthorized() throws Exception {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        mockMvc.perform(post(REFRESH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody("unknown")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.detail").value("Invalid or expired refresh token"));
+    }
+
+    @Test
+    void reusingARotatedTokenIsUnauthorizedAndRevokesTheSession() throws Exception {
+        RefreshTokenEntity stored = storedToken(existingCustomer("password123"), "already-used");
+        stored.setUsedAt(Instant.now().minusSeconds(60));
+
+        mockMvc.perform(post(REFRESH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody("already-used")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Invalid or expired refresh token"));
+
+        verify(refreshTokenRepository).revokeFamily(eq(stored.getFamilyId()), any());
+    }
+
+    @Test
+    void refreshWithoutTokenIsBadRequest() throws Exception {
+        mockMvc.perform(post(REFRESH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void logoutRevokesTheSessionAndReturnsNoContent() throws Exception {
+        RefreshTokenEntity stored = storedToken(existingCustomer("password123"), "current-refresh");
+
+        mockMvc.perform(post(LOGOUT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody("current-refresh")))
+                .andExpect(status().isNoContent());
+
+        verify(refreshTokenRepository).revokeFamily(eq(stored.getFamilyId()), any());
+    }
+
+    @Test
+    void logoutWithUnknownTokenStillReturnsNoContent() throws Exception {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        mockMvc.perform(post(LOGOUT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody("unknown")))
+                .andExpect(status().isNoContent());
+    }
+
+    private RefreshTokenEntity storedToken(CustomerEntity customer, String rawToken) {
+        RefreshTokenEntity stored = RefreshTokenEntity.builder()
+                .id(UUID.randomUUID())
+                .customer(customer)
+                .tokenHash(RefreshTokenService.hash(rawToken))
+                .familyId(UUID.randomUUID())
+                .expiresAt(Instant.now().plus(Duration.ofDays(1)))
+                .build();
+        when(refreshTokenRepository.findByTokenHash(RefreshTokenService.hash(rawToken)))
+                .thenReturn(Optional.of(stored));
+        return stored;
+    }
+
+    private static byte[] refreshBody(String refreshToken) {
+        return ("{\"refreshToken\":\"" + refreshToken + "\"}").getBytes(StandardCharsets.UTF_8);
     }
 
     @Test

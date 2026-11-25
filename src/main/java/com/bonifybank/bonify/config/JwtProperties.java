@@ -10,10 +10,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param secret     HMAC key for HS256, read from the JWT_SECRET environment variable (NFR-01)
  * @param issuer     value written in the "iss" claim and checked on every request
- * @param expiration token validity (NFR-02: 60 minutes)
+ * @param expiration        access token validity (NFR-02: 60 minutes)
+ * @param refreshExpiration refresh token validity; every refresh rotates the token and restarts this window
  */
 @ConfigurationProperties("bonify.jwt")
-public record JwtProperties(String secret, String issuer, Duration expiration) {
+public record JwtProperties(String secret, String issuer, Duration expiration, Duration refreshExpiration) {
 
     // HS256 requires a key of at least 256 bits
     private static final int MIN_SECRET_BYTES = 32;
@@ -28,6 +29,9 @@ public record JwtProperties(String secret, String issuer, Duration expiration) {
         }
         if (expiration == null || expiration.isNegative() || expiration.isZero()) {
             throw new IllegalStateException("bonify.jwt.expiration must be a positive duration");
+        }
+        if (refreshExpiration == null || refreshExpiration.isNegative() || refreshExpiration.isZero()) {
+            throw new IllegalStateException("bonify.jwt.refresh-expiration must be a positive duration");
         }
     }
 }
