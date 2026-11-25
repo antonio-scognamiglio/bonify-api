@@ -4,7 +4,6 @@ import com.bonifybank.bonify.exception.BusinessException;
 import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.account.dto.AccountResponse;
 import com.bonifybank.bonify.modules.account.dto.CashOperationRequest;
-import com.bonifybank.bonify.modules.account.dto.OpenAccountRequest;
 import com.bonifybank.bonify.modules.account.dto.UpdateAccountStatusRequest;
 import com.bonifybank.bonify.modules.customer.CurrentCustomerResolver;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
@@ -34,17 +33,17 @@ public class AccountService {
         this.transactionRepository = transactionRepository;
     }
 
+    // FR-ACC-01: no input, every account is in EUR in the MVP
     @Transactional
-    public AccountResponse openAccount(OpenAccountRequest request) {
+    public AccountResponse openAccount() {
         CustomerEntity customer = currentCustomerResolver.currentCustomer();
-        Currency currency = Currency.valueOf(request.currency().trim().toUpperCase());
 
         String iban = generateUniqueIban();
 
         AccountEntity account = AccountEntity.builder()
                 .iban(iban)
                 .balance(BigDecimal.ZERO)
-                .currency(currency)
+                .currency(Currency.EUR)
                 .status(AccountStatus.ACTIVE)
                 .customer(customer)
                 .build();
