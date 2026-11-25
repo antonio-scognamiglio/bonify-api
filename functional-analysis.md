@@ -485,9 +485,11 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 | 401 | `UNAUTHORIZED` | Missing, invalid or expired token; wrong credentials |
 | 403 | `FORBIDDEN` | Role or ownership check failed |
 | 404 | `NOT_FOUND` | Customer, account or transfer does not exist |
+| 405 | `METHOD_NOT_ALLOWED` | HTTP method not supported on the path; the `Allow` header lists the supported ones |
 | 409 | `EMAIL_ALREADY_USED` | Registration or profile update with a taken email |
 | 409 | `TAX_CODE_ALREADY_USED` | Registration with a taken tax code |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | Same key, different transfer body |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Request body with a `Content-Type` other than `application/json` |
 | 422 | `INSUFFICIENT_FUNDS` | Withdrawal or transfer above the balance |
 | 422 | `ACCOUNT_BLOCKED` | Operation on a blocked account |
 | 500 | `INTERNAL_ERROR` | Unexpected error; no stack trace in the response |

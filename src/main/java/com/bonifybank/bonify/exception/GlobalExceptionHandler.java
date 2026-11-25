@@ -5,10 +5,13 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.accept.InvalidApiVersionException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,9 +47,11 @@ public class GlobalExceptionHandler {
         STATUS_BY_CODE.put(ErrorCodes.UNAUTHORIZED, HttpStatus.UNAUTHORIZED);
         STATUS_BY_CODE.put(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN);
         STATUS_BY_CODE.put(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND);
+        STATUS_BY_CODE.put(ErrorCodes.METHOD_NOT_ALLOWED, HttpStatus.METHOD_NOT_ALLOWED);
         STATUS_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, HttpStatus.CONFLICT);
+        STATUS_BY_CODE.put(ErrorCodes.UNSUPPORTED_MEDIA_TYPE, HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         STATUS_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS,    HttpStatus.UNPROCESSABLE_CONTENT);
         STATUS_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED,        HttpStatus.UNPROCESSABLE_CONTENT);
         STATUS_BY_CODE.put(ErrorCodes.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -58,9 +63,11 @@ public class GlobalExceptionHandler {
         TITLE_BY_CODE.put(ErrorCodes.UNAUTHORIZED, "Unauthorized");
         TITLE_BY_CODE.put(ErrorCodes.FORBIDDEN, "Forbidden");
         TITLE_BY_CODE.put(ErrorCodes.NOT_FOUND, "Not found");
+        TITLE_BY_CODE.put(ErrorCodes.METHOD_NOT_ALLOWED, "Method not allowed");
         TITLE_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, "Email already in use");
         TITLE_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, "Tax code already in use");
         TITLE_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency key reused with a different body");
+        TITLE_BY_CODE.put(ErrorCodes.UNSUPPORTED_MEDIA_TYPE, "Unsupported media type");
         TITLE_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS, "Insufficient funds");
         TITLE_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED, "Account blocked");
         TITLE_BY_CODE.put(ErrorCodes.INTERNAL_ERROR, "Internal error");
@@ -173,6 +180,25 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
         return respond(HttpStatus.FORBIDDEN, problemDetail(ErrorCodes.FORBIDDEN, ex.getMessage(), pathOf(request)));
+    }
+
+    // HTTP method not mapped on an existing path (e.g. DELETE /accounts) → 405, with the Allow header
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        ErrorResponse error = problemDetail(ErrorCodes.METHOD_NOT_ALLOWED,
+                "Method " + ex.getMethod() + " is not supported on this path", pathOf(request));
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getSupportedHttpMethods() != null) {
+            headers.setAllow(ex.getSupportedHttpMethods());
+        }
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(headers).contentType(PROBLEM_JSON).body(error);
+    }
+
+    // Body sent with a Content-Type other than JSON → 415
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+        return respond(HttpStatus.UNSUPPORTED_MEDIA_TYPE, problemDetail(ErrorCodes.UNSUPPORTED_MEDIA_TYPE,
+                "Content-Type must be application/json", pathOf(request)));
     }
 
     // Fallback: any other exception → 500 INTERNAL_ERROR, no stack trace
