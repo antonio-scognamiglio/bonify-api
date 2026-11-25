@@ -92,6 +92,8 @@ public class TransactionService {
                 tx.getAmount(),
                 tx.getBalanceAfter(),
                 tx.getDescription(),
+                // Only transfer lines have one; reading the id of the lazy proxy needs no extra query
+                tx.getTransfer() != null ? tx.getTransfer().getId() : null,
                 tx.getCreatedAt()
         );
     }
