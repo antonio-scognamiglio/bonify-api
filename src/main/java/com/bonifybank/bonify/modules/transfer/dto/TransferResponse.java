@@ -6,8 +6,8 @@ import java.util.UUID;
 
 public record TransferResponse(
         UUID id,
-        String sourceIban,
-        String targetIban,
+        String fromIban,
+        String toIban,
         BigDecimal amount,
         String description,
         String status,

@@ -7,7 +7,7 @@
 
 A REST API for a simplified retail bank, built with **Spring Boot** and with a **CI** pipeline that builds and tests every pull request.
 
-Customers register, open accounts, deposit and withdraw money, and send transfers that are **atomic, idempotent and safe under concurrency**. Administrators manage customers and can block accounts.
+Customers register, open accounts, deposit and withdraw money, and send transfers that are **atomic, idempotent and safe under concurrency**. Administrators list customers and can block accounts.
 
 Final project of a Java Spring Boot course.
 
@@ -49,7 +49,7 @@ Final project of a Java Spring Boot course.
 - Concurrency-safe: 100 parallel transfers keep balances correct, verified by an automated test
 
 **Administration**
-- List and edit customers
+- List customers (an admin cannot edit other customers; the only admin account is created in the database)
 - Block and unblock accounts
 
 **Operations**
@@ -162,7 +162,6 @@ The easiest way is **Swagger UI**: log in, click **Authorize**, paste the token 
 | PATCH | `/api/v1/customers/me` | Update own personal data | Customer, Admin |
 | PUT | `/api/v1/customers/me/password` | Change own password | Customer, Admin |
 | GET | `/api/v1/customers` | List customers | Admin |
-| PATCH | `/api/v1/customers/{id}` | Update a customer | Admin |
 | POST | `/api/v1/accounts` | Open an account | Customer |
 | GET | `/api/v1/accounts` | Own accounts | Customer |
 | GET | `/api/v1/accounts/{iban}` | Account detail and balance | Owner, Admin |
@@ -291,11 +290,12 @@ There is no CD pipeline: the project is not deployed anywhere.
 .
 ├── .github/workflows/ci.yml
 ├── src/main/java/com/bonifybank/bonify/
+│   ├── common/                   # DTOs shared by modules (paged response)
 │   ├── config/                   # security, JWT, .env loading, API versioning, scheduling
 │   ├── exception/                # business exceptions, global handler (RFC 7807)
 │   └── modules/
 │       ├── auth/                 # registration, login, JWT, refresh tokens
-│       ├── customer/             # profile, password, admin customer management
+│       ├── customer/             # profile, password, admin customer list
 │       ├── account/              # accounts, deposits, withdrawals, blocking
 │       ├── transaction/          # ledger and history
 │       └── transfer/             # transfers, idempotency, locking

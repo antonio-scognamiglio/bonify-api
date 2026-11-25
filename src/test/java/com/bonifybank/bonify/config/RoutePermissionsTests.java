@@ -3,6 +3,8 @@ package com.bonifybank.bonify.config;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +17,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
@@ -23,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.bonifybank.bonify.modules.account.AccountController;
+import com.bonifybank.bonify.modules.account.AccountService;
 import com.bonifybank.bonify.modules.auth.AuthController;
 import com.bonifybank.bonify.modules.auth.AuthService;
 import com.bonifybank.bonify.modules.auth.AuthTokens;
@@ -30,12 +34,16 @@ import com.bonifybank.bonify.modules.auth.JwtService;
 import com.bonifybank.bonify.modules.auth.RefreshTokenService;
 import com.bonifybank.bonify.modules.customer.CustomerController;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
+import com.bonifybank.bonify.modules.customer.CustomerService;
 import com.bonifybank.bonify.modules.transaction.TransactionController;
+import com.bonifybank.bonify.modules.transaction.TransactionService;
 import com.bonifybank.bonify.modules.transfer.TransferController;
+import com.bonifybank.bonify.modules.transfer.TransferService;
+import com.bonifybank.bonify.modules.transfer.dto.TransferResult;
 
 /**
  * Permission matrix (functional-analysis.md, endpoint table).
- * 501 = the request passed security and reached the controller (not implemented yet).
+ * 2xx = the request passed security and reached the controller (services are mocked).
  * 401 = unauthenticated user, 403 = authenticated but without the required role.
  */
 @WebMvcTest({ AuthController.class, CustomerController.class, AccountController.class,
@@ -44,7 +52,8 @@ import com.bonifybank.bonify.modules.transfer.TransferController;
 @TestPropertySource(properties = "bonify.jwt.secret=test-secret-that-is-at-least-32-bytes-long")
 class RoutePermissionsTests {
 
-    private static final int OK = 501;
+    private static final int OK = 200;
+    private static final int CREATED = 201;
     private static final int REGISTERED = 201;
     private static final int LOGIN_OK = 200;
     private static final int NO_CONTENT = 204;
@@ -66,6 +75,18 @@ class RoutePermissionsTests {
     @MockitoBean
     RefreshTokenService refreshTokenService;
 
+    @MockitoBean
+    CustomerService customerService;
+
+    @MockitoBean
+    AccountService accountService;
+
+    @MockitoBean
+    TransactionService transactionService;
+
+    @MockitoBean
+    TransferService transferService;
+
     @BeforeEach
     void stubAuthService() {
         when(authService.register(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
@@ -73,6 +94,9 @@ class RoutePermissionsTests {
         AuthTokens tokens = new AuthTokens("test-token", "test-refresh-token");
         when(authService.login(anyString(), anyString())).thenReturn(tokens);
         when(authService.refresh(anyString())).thenReturn(tokens);
+        // The controller maps the page: a null Page would fail with 500
+        when(customerService.listCustomers(anyInt(), anyInt())).thenReturn(Page.empty());
+        when(transferService.sendTransfer(anyString(), any())).thenReturn(new TransferResult(null, true));
     }
 
     //                    method,           path,                                     guest,        customer,  admin
@@ -84,17 +108,16 @@ class RoutePermissionsTests {
                 route(HttpMethod.POST,  "/api/v1/auth/logout",                        NO_CONTENT,   NO_CONTENT, NO_CONTENT),
                 route(HttpMethod.GET,   "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PATCH, "/api/v1/customers/me",                       UNAUTHORIZED, OK,        OK),
-                route(HttpMethod.PUT,   "/api/v1/customers/me/password",              UNAUTHORIZED, OK,        OK),
+                route(HttpMethod.PUT,   "/api/v1/customers/me/password",              UNAUTHORIZED, NO_CONTENT, NO_CONTENT),
                 route(HttpMethod.GET,   "/api/v1/customers",                          UNAUTHORIZED, FORBIDDEN, OK),
-                route(HttpMethod.PATCH, "/api/v1/customers/" + UUID,                  UNAUTHORIZED, FORBIDDEN, OK),
-                route(HttpMethod.POST,  "/api/v1/accounts",                           UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.POST,  "/api/v1/accounts",                           UNAUTHORIZED, CREATED,   FORBIDDEN),
                 route(HttpMethod.GET,   "/api/v1/accounts",                           UNAUTHORIZED, OK,        FORBIDDEN),
                 route(HttpMethod.GET,   "/api/v1/accounts/" + IBAN,                   UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.POST,  "/api/v1/accounts/" + IBAN + "/deposit",      UNAUTHORIZED, OK,        FORBIDDEN),
                 route(HttpMethod.POST,  "/api/v1/accounts/" + IBAN + "/withdraw",     UNAUTHORIZED, OK,        FORBIDDEN),
                 route(HttpMethod.GET,   "/api/v1/accounts/" + IBAN + "/transactions", UNAUTHORIZED, OK,        OK),
                 route(HttpMethod.PATCH, "/api/v1/accounts/" + IBAN + "/status",       UNAUTHORIZED, FORBIDDEN, OK),
-                route(HttpMethod.POST,  "/api/v1/transfers",                          UNAUTHORIZED, OK,        FORBIDDEN),
+                route(HttpMethod.POST,  "/api/v1/transfers",                          UNAUTHORIZED, CREATED,   FORBIDDEN),
                 route(HttpMethod.GET,   "/api/v1/transfers/" + UUID,                  UNAUTHORIZED, OK,        OK));
     }
 
@@ -123,19 +146,41 @@ class RoutePermissionsTests {
     }
 
     private static MockHttpServletRequestBuilder build(HttpMethod method, String path) {
-        MockHttpServletRequestBuilder builder = request(method, path).header("Idempotency-Key", "test-key");
-        if (method == HttpMethod.POST && path.startsWith("/api/v1/auth/")) {
-            String body;
-            if (path.endsWith("/register")) {
-                body = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\","
-                        + "\"phoneNumber\":\"+393401234567\",\"taxCode\":\"DOEJHN90A01H501X\",\"password\":\"password123\"}";
-            } else if (path.endsWith("/login")) {
-                body = "{\"email\":\"john@example.com\",\"password\":\"password123\"}";
-            } else {
-                body = "{\"refreshToken\":\"test-refresh-token\"}";
-            }
+        MockHttpServletRequestBuilder builder = request(method, path).header("Idempotency-Key", UUID);
+        String body = bodyFor(method, path);
+        if (body != null) {
             builder.contentType(MediaType.APPLICATION_JSON).content(body);
         }
         return builder;
+    }
+
+    // A valid body for every route that needs one, so that validation never hides the security outcome
+    private static String bodyFor(HttpMethod method, String path) {
+        if (path.endsWith("/auth/register")) {
+            return "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"email\":\"john@example.com\","
+                    + "\"phoneNumber\":\"+393401234567\",\"taxCode\":\"DOEJHN90A01H501X\",\"password\":\"password123\"}";
+        }
+        if (path.endsWith("/auth/login")) {
+            return "{\"email\":\"john@example.com\",\"password\":\"password123\"}";
+        }
+        if (path.startsWith("/api/v1/auth/")) {
+            return "{\"refreshToken\":\"test-refresh-token\"}";
+        }
+        if (path.endsWith("/me/password")) {
+            return "{\"currentPassword\":\"password123\",\"newPassword\":\"newPassword123\"}";
+        }
+        if (method == HttpMethod.PATCH && path.equals("/api/v1/customers/me")) {
+            return "{\"firstName\":\"Jane\"}";
+        }
+        if (path.endsWith("/deposit") || path.endsWith("/withdraw")) {
+            return "{\"amount\":10.00}";
+        }
+        if (path.endsWith("/status")) {
+            return "{\"status\":\"BLOCKED\"}";
+        }
+        if (method == HttpMethod.POST && path.equals("/api/v1/transfers")) {
+            return "{\"fromIban\":\"" + IBAN + "\",\"toIban\":\"IT60X0542811101000000654321\",\"amount\":10.00}";
+        }
+        return null;
     }
 }

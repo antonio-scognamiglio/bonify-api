@@ -10,6 +10,8 @@ public record TransactionResponse(
         BigDecimal amount,
         BigDecimal balanceAfter,
         String description,
+        // Set only for TRANSFER_IN / TRANSFER_OUT lines (FR-TRX-01)
+        UUID transferId,
         Instant createdAt
 ) {
 }
