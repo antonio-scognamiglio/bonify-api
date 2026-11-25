@@ -14,8 +14,7 @@ import com.bonifybank.bonify.modules.transaction.TransactionType;
 import com.bonifybank.bonify.modules.transfer.dto.TransferRequest;
 import com.bonifybank.bonify.modules.transfer.dto.TransferResponse;
 import com.bonifybank.bonify.modules.transfer.dto.TransferResult;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,9 +22,11 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
+import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 @Service
 public class TransferService {
@@ -70,31 +71,30 @@ public class TransferService {
         Optional<TransferEntity> existing = transferRepository.findByIdempotencyKey(normalizedKey);
 
         if (existing.isPresent()) {
-            TransferEntity savedTransfer = existing.get();
-
-            // The key belongs to the customer who sent the original transfer: anyone else gets the same
-            // 409 as a different body, so the original transfer is never revealed (BR-06)
-            boolean sameSender = savedTransfer.getFromAccount().getCustomer().getId().equals(current.getId());
-            if (!sameSender || !savedTransfer.getRequest().equals(requestFingerPrint)) {
-                throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
-            }
-            // FR-TRF-02: idempotent retry, nothing moves again
-            return new TransferResult(toResponse(savedTransfer), false);
+            return replay(existing.get(), current, requestFingerPrint);
         }
 
         if (sourceIban.equalsIgnoreCase(targetIban)) {
             throw new BusinessException(ErrorCodes.SAME_ACCOUNT, "Source and target IBAN must be different");
         }
 
-        List<String> orderedIbans = Stream.of(sourceIban, targetIban)
-                .sorted(Comparator.naturalOrder())
-                .toList();
+        // BR-05: both accounts are locked, always in ascending id order, so two opposite transfers
+        // cannot deadlock. Only the ids are read first: the entities are loaded by the locking query
+        Long sourceId = accountIdOf(sourceIban);
+        Long targetId = accountIdOf(targetIban);
+        boolean sourceFirst = sourceId.compareTo(targetId) < 0;
+        AccountEntity firstLocked = getAccountForUpdate(sourceFirst ? sourceId : targetId);
+        AccountEntity secondLocked = getAccountForUpdate(sourceFirst ? targetId : sourceId);
 
-        AccountEntity firstLocked = getAccountForUpdate(orderedIbans.get(0));
-        AccountEntity secondLocked = getAccountForUpdate(orderedIbans.get(1));
+        AccountEntity fromAccount = sourceFirst ? firstLocked : secondLocked;
+        AccountEntity toAccount = sourceFirst ? secondLocked : firstLocked;
 
-        AccountEntity fromAccount = firstLocked.getIban().equals(sourceIban) ? firstLocked : secondLocked;
-        AccountEntity toAccount = firstLocked.getIban().equals(targetIban) ? firstLocked : secondLocked;
+        // BR-04: a concurrent request with the same key may have committed while this one was waiting
+        // for the locks; without this second look it would fail on the unique key instead of replaying
+        Optional<TransferEntity> committedMeanwhile = transferRepository.findByIdempotencyKey(normalizedKey);
+        if (committedMeanwhile.isPresent()) {
+            return replay(committedMeanwhile.get(), current, requestFingerPrint);
+        }
 
         if (!fromAccount.getCustomer().getId().equals(current.getId())) {
             throw new BusinessException(ErrorCodes.FORBIDDEN, "Source account does not belong to authenticated customer");
@@ -109,7 +109,9 @@ public class TransferService {
         }
 
         if (fromAccount.getBalance().compareTo(request.amount()) < 0) {
-            throw new BusinessException(ErrorCodes.INSUFFICIENT_FUNDS, "Insufficient balance");
+            throw new BusinessException(ErrorCodes.INSUFFICIENT_FUNDS, "Account " + fromAccount.getIban() + " has "
+                    + fromAccount.getBalance() + " " + fromAccount.getCurrency() + ", " + request.amount() + " "
+                    + fromAccount.getCurrency() + " requested");
         }
 
         BigDecimal newFromBalance = fromAccount.getBalance().subtract(request.amount());
@@ -133,7 +135,16 @@ public class TransferService {
                 .toAccount(toAccount)
                 .build();
 
-        TransferEntity savedTransfer = transferRepository.save(transfer);
+        TransferEntity savedTransfer;
+        try {
+            savedTransfer = transferRepository.save(transfer);
+            // Flushed now: createdAt is generated by the insert and is part of the response
+            transferRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // The key was committed meanwhile by a transfer between other accounts (so with a
+            // different body), which the account locks above cannot serialise
+            throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
+        }
 
         TransactionEntity outgoingTx = TransactionEntity.builder()
                 .account(fromAccount)
@@ -175,9 +186,25 @@ public class TransferService {
         return toResponse(transfer);
     }
 
-    private AccountEntity getAccountForUpdate(String iban) {
-        return accountRepository.findByIbanForUpdate(iban)
+    // FR-TRF-02: same key and same body from the same sender returns the original transfer, nothing moves again
+    private TransferResult replay(TransferEntity original, CustomerEntity current, String requestFingerPrint) {
+        // The key belongs to the customer who sent the original transfer: anyone else gets the same
+        // 409 as a different body, so the original transfer is never revealed (BR-06)
+        boolean sameSender = original.getFromAccount().getCustomer().getId().equals(current.getId());
+        if (!sameSender || !original.getRequest().equals(requestFingerPrint)) {
+            throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
+        }
+        return new TransferResult(toResponse(original), false);
+    }
+
+    private Long accountIdOf(String iban) {
+        return accountRepository.findIdByIban(iban)
                 .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Account not found: " + iban));
+    }
+
+    private AccountEntity getAccountForUpdate(Long id) {
+        return accountRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Account not found: " + id));
     }
 
     private String fingerprint(String sourceIban, String targetIban, BigDecimal amount, String description) {

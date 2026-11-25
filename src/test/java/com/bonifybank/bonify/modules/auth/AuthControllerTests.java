@@ -21,6 +21,8 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -169,6 +171,41 @@ class AuthControllerTests {
                                         "password123")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TAX_CODE_ALREADY_USED"));
+    }
+
+    @Test
+    void loginWithShortWrongPasswordIsUnauthorizedNotBadRequest() throws Exception {
+        when(customerRepository.findByEmail("anna@example.com")).thenReturn(Optional.of(existingCustomer("password123")));
+
+        mockMvc.perform(post(LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"anna@example.com\",\"password\":\"x\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "{\"password\":\"password123\"}", "{\"email\":\"\",\"password\":\"password123\"}",
+            "{\"email\":\"   \",\"password\":\"password123\"}", "{\"email\":\"anna@example.com\"}",
+            "{\"email\":\"anna@example.com\",\"password\":\"\"}",
+            "{\"email\":\"anna@example.com\",\"password\":\"   \"}" })
+    void loginWithMissingOrBlankFieldsIsBadRequest(String body) throws Exception {
+        mockMvc.perform(post(LOGIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void emailAlreadyUsedProblemTypeUsesDashes() throws Exception {
+        when(customerRepository.existsByEmail("anna@example.com")).thenReturn(true);
+
+        mockMvc.perform(post(REGISTER)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerBody("anna@example.com", "+393401234567", "RSSNNA90A41H501N", "password123")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://bonify.example/errors/email-already-used"));
     }
 
     private static byte[] registerBody(String email, String phoneNumber, String taxCode, String password) {

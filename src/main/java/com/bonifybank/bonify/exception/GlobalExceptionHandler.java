@@ -1,8 +1,11 @@
 package com.bonifybank.bonify.exception;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -78,7 +81,8 @@ public class GlobalExceptionHandler {
     }
 
     private static String typeFor(ErrorCodes code) {
-        return "https://bonify.example/errors/" + code.name().toLowerCase();
+        // Dashes as in functional-analysis.md section 8, e.g. .../errors/insufficient-funds
+        return "https://bonify.example/errors/" + code.name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     private static String titleFor(ErrorCodes code) {
@@ -90,6 +94,11 @@ public class GlobalExceptionHandler {
     }
 
     private static ErrorResponse problemDetail(ErrorCodes code, String detail, String instance) {
+        return problemDetail(code, detail, instance, null);
+    }
+
+    private static ErrorResponse problemDetail(ErrorCodes code, String detail, String instance,
+            List<ErrorResponse.FieldError> errors) {
         return new ErrorResponse(
                 typeFor(code),
                 titleFor(code),
@@ -97,7 +106,8 @@ public class GlobalExceptionHandler {
                 detail,
                 instance,
                 code.name(),
-                LocalDateTime.now());
+                Instant.now(),
+                errors);
     }
 
     private static String pathOf(HttpServletRequest request) {
@@ -115,22 +125,31 @@ public class GlobalExceptionHandler {
         return respond(statusFor(ex.getCode()), problemDetail(ex.getCode(), ex.getMessage(), pathOf(request)));
     }
 
-    // Validation failed → 400 VALIDATION_ERROR, detail = field errors
+    // Validation failed → 400 VALIDATION_ERROR with the list of field errors (section 8)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
-        ex.getBindingResult().getFieldErrors()
-                .forEach(e -> fieldErrors.put(e.getField(), e.getDefaultMessage()));
-        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Field errors: " + fieldErrors, pathOf(request)));
+        List<ErrorResponse.FieldError> errors = new ArrayList<>();
+        ex.getBindingResult().getFieldErrors().forEach(e -> {
+            fieldErrors.put(e.getField(), e.getDefaultMessage());
+            errors.add(new ErrorResponse.FieldError(e.getField(), e.getDefaultMessage()));
+        });
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Field errors: " + fieldErrors,
+                pathOf(request), errors));
     }
 
     // Constraint on a @RequestParam / @PathVariable / @RequestHeader failed (e.g. size > 100) → 400 VALIDATION_ERROR
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException ex, HttpServletRequest request) {
         Map<String, String> paramErrors = new LinkedHashMap<>();
-        ex.getParameterValidationResults().forEach(result -> result.getResolvableErrors()
-                .forEach(e -> paramErrors.put(result.getMethodParameter().getParameterName(), e.getDefaultMessage())));
-        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Parameter errors: " + paramErrors, pathOf(request)));
+        List<ErrorResponse.FieldError> errors = new ArrayList<>();
+        ex.getParameterValidationResults().forEach(result -> result.getResolvableErrors().forEach(e -> {
+            String name = result.getMethodParameter().getParameterName();
+            paramErrors.put(name, e.getDefaultMessage());
+            errors.add(new ErrorResponse.FieldError(name, e.getDefaultMessage()));
+        }));
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Parameter errors: " + paramErrors,
+                pathOf(request), errors));
     }
 
     // Required header missing (e.g. Idempotency-Key) → 400 VALIDATION_ERROR
@@ -162,10 +181,11 @@ public class GlobalExceptionHandler {
                 "Invalid value for '" + ex.getName() + "'", pathOf(request)));
     }
 
-    // Unsupported API version → 400 VALIDATION_ERROR
+    // Unsupported API version → 400 VALIDATION_ERROR. The exception message is not echoed: it is a raw
+    // "400 BAD_REQUEST ..." status line
     @ExceptionHandler(InvalidApiVersionException.class)
     public ResponseEntity<ErrorResponse> handleInvalidApiVersion(InvalidApiVersionException ex, HttpServletRequest request) {
-        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, ex.getMessage(), pathOf(request)));
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Unsupported API version", pathOf(request)));
     }
 
     // Unknown path → 404 NOT_FOUND

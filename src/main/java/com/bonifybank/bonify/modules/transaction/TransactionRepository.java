@@ -5,14 +5,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
-import java.util.UUID;
 
-public interface TransactionRepository extends JpaRepository<TransactionEntity, UUID> {
-    Page<TransactionEntity> findByAccount_Id (UUID accountId, Pageable pageable);
+public interface TransactionRepository extends JpaRepository<TransactionEntity, Long> {
+    Page<TransactionEntity> findByAccount_Id (Long accountId, Pageable pageable);
 
-    Page<TransactionEntity> findByAccount_IdAndCreatedAtGreaterThanEqual (UUID accountId, Instant from, Pageable pageable);
+    Page<TransactionEntity> findByAccount_IdAndCreatedAtGreaterThanEqual (Long accountId, Instant from, Pageable pageable);
 
-    Page<TransactionEntity> findByAccount_IdAndCreatedAtLessThanEqual(UUID accountId, Instant to, Pageable pageable);
+    Page<TransactionEntity> findByAccount_IdAndCreatedAtLessThanEqual(Long accountId, Instant to, Pageable pageable);
 
-    Page<TransactionEntity> findByAccount_IdAndCreatedAtBetween(UUID accountId, Instant from, Instant to, Pageable pageable);
+    Page<TransactionEntity> findByAccount_IdAndCreatedAtBetween(Long accountId, Instant from, Instant to, Pageable pageable);
 }

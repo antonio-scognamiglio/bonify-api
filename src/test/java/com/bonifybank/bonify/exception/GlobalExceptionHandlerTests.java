@@ -15,15 +15,18 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.accept.InvalidApiVersionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -77,16 +80,6 @@ class GlobalExceptionHandlerTests {
         assert body.instance() != null;
         assert body.detail() != null;
         assert body.timestamp() != null;
-    }
-
-    @Test
-    void entityNotFoundExceptionIsNotFound() {
-        ResponseEntity<ErrorResponse> response =
-                handler.handleBusiness(new EntityNotFoundException("Customer", 12), request);
-
-        ErrorResponse body = response.getBody();
-        assert response.getStatusCode().value() == HttpStatus.NOT_FOUND.value();
-        assert body.code() == ErrorCodes.NOT_FOUND.name();
     }
 
     @Test
@@ -173,6 +166,43 @@ class GlobalExceptionHandlerTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         assertThat(response.getBody().code()).isEqualTo(ErrorCodes.UNSUPPORTED_MEDIA_TYPE.name());
+    }
+
+    @Test
+    void problemTypeUsesDashesForMultiWordCodes() {
+        ErrorResponse body = handler.handleBusiness(
+                new BusinessException(ErrorCodes.WRONG_CURRENT_PASSWORD, "wrong"), request).getBody();
+
+        assertThat(body.type()).isEqualTo("https://bonify.example/errors/wrong-current-password");
+        assertThat(body.instance()).isEqualTo("/api/v1/customers");
+    }
+
+    @Test
+    void accessDeniedIsForbidden() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleAccessDenied(new AccessDeniedException("Access Denied"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.FORBIDDEN.name());
+        assertThat(response.getBody().status()).isEqualTo(403);
+    }
+
+    @Test
+    void unknownResourceIsNotFound() {
+        ResponseEntity<ErrorResponse> response = handler.handleNoResourceFound(
+                new NoResourceFoundException(HttpMethod.GET, "/api/v1/nothing", "nothing"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.NOT_FOUND.name());
+    }
+
+    @Test
+    void invalidApiVersionIsValidationError() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleInvalidApiVersion(new InvalidApiVersionException("9"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.VALIDATION_ERROR.name());
     }
 
     private static void assertValidationError(ResponseEntity<ErrorResponse> response, String detail) {

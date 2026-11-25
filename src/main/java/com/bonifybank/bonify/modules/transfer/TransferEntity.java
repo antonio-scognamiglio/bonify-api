@@ -10,7 +10,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "transfer")
+// BR-01 at database level
+@Table(name = "transfer", check = @CheckConstraint(name = "chk_transfer_amount", constraint = "amount > 0"))
 @Getter
 @Setter
 @NoArgsConstructor

@@ -8,10 +8,11 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.UUID;
 
 @Entity
-@Table(name = "account_transactions")
+// The history is always read by account, newest first (FR-TRX-01)
+@Table(name = "account_transactions", indexes = @Index(name = "idx_account_transactions_account_created",
+        columnList = "account_id, created_at"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,8 +20,8 @@ import java.util.UUID;
 @Builder
 public class TransactionEntity{
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "account_id", nullable = false)

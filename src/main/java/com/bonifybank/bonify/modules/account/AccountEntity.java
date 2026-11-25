@@ -7,10 +7,10 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.UUID;
 
 @Entity
-@Table(name = "accounts")
+// BR-02: last line of defence, the services already reject an overdraft with 422
+@Table(name = "accounts", check = @CheckConstraint(name = "chk_accounts_balance", constraint = "balance >= 0"))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,16 +19,17 @@ import java.util.UUID;
 public class AccountEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "iban", nullable = false, unique = true,length = 34)
     private String iban;
 
     @Column(name = "balance", nullable = false, precision = 19, scale = 2)
     @Builder.Default
-    private BigDecimal balance =  BigDecimal.ZERO;
+    private BigDecimal balance = new BigDecimal("0.00");
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "currency", nullable = false, length = 3)
     @Builder.Default
     private Currency currency = Currency.EUR;

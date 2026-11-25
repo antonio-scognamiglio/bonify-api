@@ -1,7 +1,8 @@
 package com.bonifybank.bonify.config;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 import org.springframework.context.annotation.Bean;
@@ -65,6 +66,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(bearerTokenResolver())
+                        // Invalid or expired token: the bearer filter answers by itself, with its own
+                        // entry point (empty body) unless the RFC 7807 one is set here too
+                        .authenticationEntryPoint(this::unauthorized)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
                 .exceptionHandling(handler -> handler
                         .authenticationEntryPoint(this::unauthorized)
@@ -98,7 +102,7 @@ public class SecurityConfig {
 
     private static void writeProblemDetail(HttpServletResponse response, int status, String code, String title,
             String detail, String instance) throws IOException {
-        String type = "https://bonify.example/errors/" + code.toLowerCase();
+        String type = "https://bonify.example/errors/" + code.toLowerCase(Locale.ROOT).replace('_', '-');
         response.setStatus(status);
         response.setContentType("application/problem+json");
         response.getWriter().write(
@@ -108,6 +112,6 @@ public class SecurityConfig {
                         + ",\"detail\":\"" + detail + "\""
                         + ",\"instance\":\"" + instance + "\""
                         + ",\"code\":\"" + code + "\""
-                        + ",\"timestamp\":\"" + LocalDateTime.now() + "\"}");
+                        + ",\"timestamp\":\"" + Instant.now() + "\"}");
     }
 }

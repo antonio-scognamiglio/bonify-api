@@ -9,5 +9,6 @@ import jakarta.validation.constraints.Size;
  */
 public record LoginRequest(
         @NotBlank @Email @Size(max = 254) String email,
-        @NotBlank @Size(min = 8) String password) {
+        // No minimum length here: a short wrong password is a 401 like any other wrong password
+        @NotBlank String password) {
 }

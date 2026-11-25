@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.UUID;
 
 @Service
 public class TransactionService {
@@ -57,7 +56,7 @@ public class TransactionService {
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        UUID accountId = account.getId();
+        Long accountId = account.getId();
 
         ZoneId romeZone = ZoneId.of("Europe/Rome");
 
