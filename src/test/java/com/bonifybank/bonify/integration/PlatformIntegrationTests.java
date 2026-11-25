@@ -67,6 +67,38 @@ class PlatformIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void apiDocsMarkAuthEndpointsAsPublicAndDocumentUnauthorizedElsewhere() throws Exception {
+        // An empty security list removes the lock in Swagger UI: no token needed to register or log in
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/register'].post.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.responses['401'].description")
+                        .value(containsString("Wrong email or password")))
+                // 401 is added to every protected operation by OpenApiConfig
+                .andExpect(jsonPath("$.paths['/api/v1/accounts'].post.security").doesNotExist())
+                .andExpect(jsonPath("$.paths['/api/v1/accounts'].post.responses['401']"
+                        + ".content['application/problem+json'].example.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.paths['/api/v1/transfers/{id}'].get.responses['401']").exists());
+    }
+
+    @Test
+    void apiDocsShowRequestExamplesAndConcretePageSchemas() throws Exception {
+        // Examples prefill "Try it out" with a body that passes validation
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.schemas.RegisterRequest.properties.taxCode.example")
+                        .value("RSSMRA85T10A562S"))
+                .andExpect(jsonPath("$.components.schemas.TransferRequest.properties.amount.example").value(150.00))
+                .andExpect(jsonPath("$.paths['/api/v1/transfers'].post.parameters[0].name").value("Idempotency-Key"))
+                .andExpect(jsonPath("$.paths['/api/v1/transfers'].post.parameters[0].example").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/customers'].get.responses['200']"
+                        + ".content['application/json'].schema['$ref']").value("#/components/schemas/CustomerPage"))
+                .andExpect(jsonPath("$.paths['/api/v1/accounts/{iban}/transactions'].get.responses['200']"
+                        + ".content['application/json'].schema['$ref']").value("#/components/schemas/TransactionPage"));
+    }
+
+    @Test
     void swaggerUiIsPublic() throws Exception {
         mockMvc.perform(get("/swagger-ui.html"))
                 .andExpect(status().isFound())
