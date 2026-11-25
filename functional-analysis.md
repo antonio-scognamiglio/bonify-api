@@ -31,7 +31,6 @@ The MVP is backend-only: the user interface is **Swagger UI**, served by the app
 - Transfers between Bonify accounts, atomic and idempotent
 - Paginated transaction history with date filter
 - Administration: list and edit customers, block/unblock accounts
-- Build information endpoint, health check and metrics
 
 **Out of scope**
 
@@ -85,7 +84,6 @@ The first admin is created by a seed data migration in the `dev` profile and fro
 | View a transfer | — | if sender or receiver | ✅ |
 | List customers, edit any customer | — | — | ✅ |
 | Block or unblock an account | — | — | ✅ |
-| Read build info and health | ✅ | ✅ | ✅ |
 
 ---
 
@@ -98,7 +96,7 @@ The first admin is created by a seed data migration in the `dev` profile and fro
 | M3 Accounts | `account` | Open, view, deposit, withdraw, block/unblock |
 | M4 Transaction history | `transaction` | Ledger lines, paginated history |
 | M5 Transfers | `transfer` | Atomic, idempotent, concurrency-safe transfers |
-| M6 Platform | `info`, `common`, Actuator | Errors, API docs, build info, health, metrics |
+| M6 Platform | `config`, `exception` | Security config, error handling, API docs |
 
 ---
 
@@ -110,22 +108,42 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 
 **FR-AUTH-01 Register**
 - **Actor:** Guest
-- **Input:** `firstName`, `lastName`, `email`, `password`
-- **Validation:** all fields required; `firstName` and `lastName` 1–50 characters; `email` valid format, max 254 characters, unique (case-insensitive); `password` at least 8 characters.
-- **Behaviour:** creates a customer with role `CUSTOMER`. The password is stored as a BCrypt hash, never in clear text. Email is stored in lower case.
-- **Output:** `201 Created` with the customer profile (no password).
-- **Errors:** `400` invalid input; `409` email already registered.
+- **Input:** `firstName`, `lastName`, `email`, `phoneNumber`, `taxCode`, `password`
+- **Validation:** all fields required; `firstName` and `lastName` 1–50 characters; `email` valid format, max 254 characters, unique (case-insensitive); `phoneNumber` 7–20 digits, spaces or dashes with an optional leading `+`, max 20 characters; `taxCode` Italian *codice fiscale* format (16 characters, omocodia allowed, case-insensitive), unique; `password` at least 8 characters. Only the format of the tax code is checked, not its check character.
+- **Behaviour:** creates a customer with role `CUSTOMER`. The password is stored as a BCrypt hash, never in clear text. Email is stored in lower case, tax code in upper case.
+- **Output:** `201 Created` with the customer profile: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `taxCode` (no password).
+- **Errors:** `400` invalid input; `409` email already registered (`EMAIL_ALREADY_USED`) or tax code already registered (`TAX_CODE_ALREADY_USED`).
 
 **FR-AUTH-02 Log in**
 - **Actor:** Guest
 - **Input:** `email`, `password`
-- **Behaviour:** verifies the credentials and issues a JWT. The token subject is the customer **id** (not the email), with the role as a claim. Validity: 60 minutes.
-- **Output:** `200 OK` with `accessToken`, `tokenType: "Bearer"`, `expiresIn` (seconds).
+- **Behaviour:** verifies the credentials and issues a JWT. The token subject is the customer **id** (not the email), with the role as a claim. Validity: 5 minutes; the client renews it with the refresh token (FR-AUTH-04).
+- **Output:** `200 OK` with `accessToken`, `tokenType: "Bearer"`, `expiresIn` (seconds), `refreshToken`, `refreshExpiresIn` (seconds, 7 days).
+- **Session:** one active session per customer. The refresh token is opaque (256 random bits, not a JWT) and only its SHA-256 hash is stored, in the `refresh_tokens` table (entity `refresh_token`, section 6.1). Each login starts a new session (a token *family*) and revokes every previous one, so the previous device can no longer refresh.
 - **Errors:** `401` wrong email or password. The message is the same in both cases, so that it does not reveal which emails exist.
 
 **FR-AUTH-03 Protect the API**
-- Every endpoint except register, login, `/api/info`, `/actuator/health` and Swagger UI requires a valid token.
+- Every endpoint except register, login, refresh, logout and Swagger UI requires a valid token. On register, login, refresh and logout the `Authorization` header is ignored, so an expired access token sent by the client does not cause a `401`.
 - Missing, malformed or expired token → `401`. Valid token without the required role or ownership → `403`.
+
+**FR-AUTH-04 Refresh the session**
+- **Actor:** Guest (holder of a refresh token)
+- **Input:** `refreshToken`
+- **Behaviour:** rotation. The presented token is marked as used and swapped for a new access token and a new refresh token in the same family; the new refresh token gets a fresh 7-day validity. Marking the token as used is atomic, so two concurrent refreshes with the same token cannot both succeed: the loser gets `401` without revoking the session (it is most likely the same client, e.g. two tabs).
+- **Output:** `200 OK`, same body as FR-AUTH-02.
+- **Errors:** `400` missing token; `401` unknown, expired, already used or revoked token (same message in every case). The client must then log in again.
+
+**FR-AUTH-05 Log out**
+- **Actor:** Guest (holder of a refresh token)
+- **Input:** `refreshToken`
+- **Behaviour:** revokes the whole family of the token (the session). Idempotent: an unknown token is ignored. Access tokens already issued stay valid until they expire (stateless API, NFR-02), so the client discards its own. Changing the password (FR-CUS-03) revokes every session of the customer.
+- **Output:** `204 No Content`.
+
+**FR-AUTH-06 Refresh token reuse detection**
+- A token that was already used (rotated) and is presented again has been copied: either an attacker or the legitimate client is holding an old copy.
+- **Behaviour:** the whole family is revoked, so both parties lose the session and the legitimate customer has to log in again. The event is logged as a warning. The check is made before the expiry check, so an old copy is detected even after it has expired, as long as its row still exists.
+- **Output:** `401`, same message as any other invalid refresh token.
+- **Housekeeping:** a nightly job (03:00) deletes the rows of expired tokens, which can no longer be accepted.
 
 ### M2 — Customer profile
 
@@ -239,13 +257,9 @@ Each requirement has an ID used in tests, pull requests and the traceability mat
 
 ### M6 — Platform
 
-**FR-PLT-01 Build information** — `GET /api/info` returns application name, version, Git commit and build time. Public. Used in the demo to prove a new deployment.
+**FR-PLT-01 API documentation** — Swagger UI at `/swagger-ui.html` documents every endpoint, request and response, and lets the user log in with a bearer token.
 
-**FR-PLT-02 Health** — `GET /actuator/health` returns `UP` when the application and the database are reachable. Used by the deployment pipeline as a final check.
-
-**FR-PLT-03 API documentation** — Swagger UI at `/swagger-ui.html` documents every endpoint, request and response, and lets the user log in with a bearer token.
-
-**FR-PLT-04 Error format** — every error response uses the RFC 7807 `ProblemDetail` format (section 8).
+**FR-PLT-02 Error format** — every error response uses the RFC 7807 `ProblemDetail` format (section 8).
 
 ---
 
@@ -277,6 +291,7 @@ English names are used in code and in the database. Mapping to the Italian names
 ```mermaid
 erDiagram
     CUSTOMER ||--o{ ACCOUNT : owns
+    CUSTOMER ||--o{ REFRESH_TOKEN : "logs in with"
     ACCOUNT ||--o{ ACCOUNT_TRANSACTION : records
     ACCOUNT ||--o{ TRANSFER : "sends (from)"
     ACCOUNT ||--o{ TRANSFER : "receives (to)"
@@ -293,10 +308,27 @@ erDiagram
 | first_name | varchar(50) | required |
 | last_name | varchar(50) | required |
 | email | varchar(254) | required, unique, lower case |
+| phone_number | varchar(20) | required |
+| tax_code | varchar(16) | required, unique, upper case |
 | password_hash | varchar(100) | BCrypt hash |
 | role | varchar(20) | `CUSTOMER` or `ADMIN` |
 | created_at | timestamptz | set on creation |
 | updated_at | timestamptz | set on every update |
+
+**refresh_token** (FR-AUTH-02, 04, 05, 06)
+
+| Field | Type | Rules |
+|---|---|---|
+| id | UUID | primary key |
+| customer_id | FK → customer | required, indexed |
+| token_hash | varchar(64) | required, unique; SHA-256 (hex) of the raw token, which is never stored |
+| family_id | UUID | required, indexed; the session: shared by all tokens rotated from the same login |
+| expires_at | timestamptz | required; 7 days after creation |
+| used_at | timestamptz | set when the token is rotated; presenting it again is a reuse (FR-AUTH-06) |
+| revoked_at | timestamptz | set on logout, new login, password change or detected reuse |
+| created_at | timestamptz | set on creation |
+
+A token is **active** when `used_at` and `revoked_at` are null and `expires_at` is in the future. Each customer has at most one family with an active token.
 
 **account**
 
@@ -351,12 +383,12 @@ stateDiagram-v2
 
 ## 7. API summary
 
-Base path `/api`. Bodies are JSON. Amounts are JSON numbers with up to 2 decimals.
+Base path `/api/v1`: the API version is the first segment after `/api` (`spring.mvc.apiversion`); the paths below omit it for brevity. Bodies are JSON. Amounts are JSON numbers with up to 2 decimals.
 
 | # | Method | Path | Description | Access | FR |
 |---|---|---|---|---|---|
 | 1 | POST | `/api/auth/register` | Register a customer | Guest | FR-AUTH-01 |
-| 2 | POST | `/api/auth/login` | Get a JWT | Guest | FR-AUTH-02 |
+| 2 | POST | `/api/auth/login` | Get an access token and a refresh token | Guest | FR-AUTH-02 |
 | 3 | GET | `/api/customers/me` | Own profile | Customer, Admin | FR-CUS-01 |
 | 4 | PATCH | `/api/customers/me` | Update own personal data | Customer, Admin | FR-CUS-02 |
 | 5 | PUT | `/api/customers/me/password` | Change own password | Customer, Admin | FR-CUS-03 |
@@ -371,7 +403,8 @@ Base path `/api`. Bodies are JSON. Amounts are JSON numbers with up to 2 decimal
 | 14 | PATCH | `/api/accounts/{iban}/status` | Block or unblock | Admin | FR-ACC-06 |
 | 15 | POST | `/api/transfers` | Send a transfer (`Idempotency-Key` header) | Source owner | FR-TRF-01, 02 |
 | 16 | GET | `/api/transfers/{id}` | Transfer detail | Parties, Admin | FR-TRF-03 |
-| 17 | GET | `/api/info` | Build information | Everyone | FR-PLT-01 |
+| 17 | POST | `/api/auth/refresh` | Swap a refresh token for a new token pair | Guest | FR-AUTH-04, 06 |
+| 18 | POST | `/api/auth/logout` | End the session | Guest | FR-AUTH-05 |
 
 
 ### 7.1 Example: send a transfer
@@ -453,6 +486,7 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 | 403 | `FORBIDDEN` | Role or ownership check failed |
 | 404 | `NOT_FOUND` | Customer, account or transfer does not exist |
 | 409 | `EMAIL_ALREADY_USED` | Registration or profile update with a taken email |
+| 409 | `TAX_CODE_ALREADY_USED` | Registration with a taken tax code |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | Same key, different transfer body |
 | 422 | `INSUFFICIENT_FUNDS` | Withdrawal or transfer above the balance |
 | 422 | `ACCOUNT_BLOCKED` | Operation on a blocked account |
@@ -465,15 +499,13 @@ All errors use the RFC 7807 `ProblemDetail` format, with an extra `code` field t
 | ID | Area | Requirement |
 |---|---|---|
 | NFR-01 | Security | Passwords hashed with BCrypt; JWT signed with a secret read from the `JWT_SECRET` environment variable; no secrets in the repository |
-| NFR-02 | Security | Stateless API (no server session); tokens expire after 60 minutes |
+| NFR-02 | Security | Stateless API (no server session): access tokens are validated without a database lookup and expire after 5 minutes. Only the refresh token (7 days, rotated on every use) is stored server side |
 | NFR-03 | Consistency | BR-05 is verified by an automated test: 100 concurrent transfers between the same accounts leave the sum of balances unchanged and no balance negative |
-| NFR-04 | Data | Schema managed only by Flyway migrations; a migration already on `main` is never edited |
-| NFR-05 | Quality | Unit and integration tests (Testcontainers, real PostgreSQL); line coverage at least 70%, enforced by JaCoCo in CI |
+| NFR-04 | Data | Schema generated by Hibernate from the JPA entities (`ddl-auto=update`); no migration tool is used |
+| NFR-05 | Quality | Unit tests (Mockito) and web-layer tests (MockMvc) for every module, plus a context test against PostgreSQL; all of them run in CI on every pull request |
 | NFR-06 | Delivery | Every pull request runs build and tests in GitHub Actions; `main` accepts only reviewed PRs with green CI |
-| NFR-07 | Delivery | Every merge on `main` builds a Docker image, pushes it to GHCR and deploys it automatically; the pipeline checks `/actuator/health` after deploy |
-| NFR-08 | Portability | The whole stack (app, PostgreSQL) starts locally with `docker compose up` |
-| NFR-09 | Observability | Health, JVM, HTTP and `bank.transfers`
-| NFR-10 | Documentation | OpenAPI documentation generated from code; README with architecture, run instructions and CI badge |
+| NFR-07 | Portability | PostgreSQL starts locally with `docker compose up -d`; the app runs from the IDE or with Maven. The project is not deployed anywhere, so there is no CD pipeline |
+| NFR-08 | Documentation | OpenAPI documentation generated from code; README with architecture, run instructions and CI badge |
 
 ---
 
@@ -521,6 +553,36 @@ Feature: Transfers
     When the owner of A sends money to B
     Then the response is 422 with code ACCOUNT_BLOCKED
 
+Feature: Session
+
+  Scenario: Refresh with rotation
+    Given a customer logged in and received refresh token R1
+    When they send R1 to POST /api/auth/refresh
+    Then the response is 200 with a new access token and a new refresh token R2
+    And R1 can no longer be used
+
+  Scenario: Expired access token on refresh
+    Given a customer whose access token has expired
+    When they call POST /api/auth/refresh with a valid refresh token and the expired access token in the Authorization header
+    Then the response is 200 with a new token pair
+
+  Scenario: Reuse of a rotated token
+    Given refresh token R1 was rotated into R2
+    When R1 is sent to POST /api/auth/refresh
+    Then the response is 401
+    And R2 is revoked too, so the customer has to log in again
+
+  Scenario: Login on another device
+    Given a customer is logged in on device A with refresh token R1
+    When they log in on device B
+    Then R1 is revoked and device A has to log in again once its access token expires
+
+  Scenario: Logout
+    Given a customer with refresh token R1
+    When they send R1 to POST /api/auth/logout
+    Then the response is 204
+    And R1 can no longer be used
+
 Feature: Customer profile
 
   Scenario: Update personal data
@@ -543,6 +605,7 @@ Feature: Customer profile
     When they send the correct current password and a new 10-character password
     Then the response is 204
     And they can log in only with the new password
+    And their refresh token can no longer be used
 
   Scenario: Wrong current password
     When a customer sends a wrong current password
@@ -563,13 +626,14 @@ Feature: Ownership
 | Requirement | Endpoint # | Main tests |
 |---|---|---|
 | FR-AUTH-01, 02, 03 | 1, 2 | Registration, login, 401 without token |
+| FR-AUTH-04, 05, 06 | 17, 18 | Rotation, expired or revoked token, reuse revokes the session, logout, expired access token ignored on refresh |
 | FR-CUS-01, 02, 03 | 3, 4, 5 | Profile update, email conflict, role not changeable, password change |
 | FR-CUS-04, 05 | 6, 7 | Admin only (403 for customers) |
 | FR-ACC-01 … 05 | 8–12 | Deposit, withdrawal, insufficient funds, ownership |
 | FR-ACC-06 | 14 | Block, then deposit fails with 422 |
 | FR-TRX-01, 02 | 13 | Pagination, date filter, ledger sum equals balance |
 | FR-TRF-01, 02, 03 | 15, 16 | Success, rejections, idempotency, **100 concurrent transfers** |
-| FR-PLT-01 … 05 | 17, 18 | Info content, health UP, error format |
+| FR-PLT-01, 02 | — | Swagger UI available, error format |
 
 ---
 
@@ -577,7 +641,7 @@ Feature: Ownership
 
 **Assumptions**
 
-- A-01: Only transfers that complete are persisted. A rejected transfer returns an error, is counted in the `bank.transfers{outcome="rejected"}` metric and is logged, but is not saved.
+- A-01: Only transfers that complete are persisted. A rejected transfer returns an error, is logged, but is not saved.
 - A-02: Admins do not own accounts and cannot move money; they only view, manage customers and block accounts.
 - A-03: No daily or per-transfer limits in the MVP, apart from the available balance.
 - A-04: All timestamps are stored in UTC.
