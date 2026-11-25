@@ -1,6 +1,6 @@
 # bonify-api
 
-[![CI](https://github.com/<github-owner>/bonify-api/actions/workflows/ci.yml/badge.svg)](https://github.com/<github-owner>/bonify-api/actions/workflows/ci.yml)
+[![CI](https://github.com/antonio-scognamiglio/bonify-api/actions/workflows/ci.yml/badge.svg)](https://github.com/antonio-scognamiglio/bonify-api/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-25-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.x-brightgreen)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
@@ -49,11 +49,13 @@ Final project of a Java Spring Boot course.
 - Concurrency-safe: 100 parallel transfers keep balances correct, verified by an automated test
 
 **Administration**
-- List customers (an admin cannot edit other customers; the only admin account is created in the database)
+- List customers (an admin cannot edit other customers; the only admin account is created in the database by the demo data seeder)
 - Block and unblock accounts
 
 **Operations**
-- OpenAPI documentation with Swagger UI
+- OpenAPI documentation with Swagger UI: quick start, endpoints grouped by area, valid example bodies for "Try it out" and documented error responses
+- Demo data loaded at startup: one admin and five customers with accounts, deposits, withdrawals and transfers
+- Nightly cleanup of expired refresh tokens (03:00)
 
 ---
 
@@ -103,7 +105,7 @@ A single Spring Boot application, organised by feature (`auth`, `customer`, `acc
 The project is not deployed anywhere: Docker Compose runs only the database, the app runs from your IDE or with Maven.
 
 ```bash
-git clone https://github.com/<github-owner>/bonify-api.git
+git clone https://github.com/antonio-scognamiglio/bonify-api.git
 cd bonify-api
 cp .env.example .env        # then edit the values
 docker compose up -d        # PostgreSQL
@@ -116,7 +118,22 @@ mvn spring-boot:run         # the app, or run BonifyApplication from your IDE
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | PostgreSQL | localhost:`DB_PORT` (credentials from `.env`) |
 
-There is no demo data yet: register a customer from Swagger UI to start.
+### Demo data
+
+On first start the app loads demo data (`seed/DataSeeder`), so you can log in right away. The seeder runs only if `admin@bonify.example` does not exist yet, so restarting the app never duplicates the data. Set `SEED_ENABLED=false` to start on an empty database.
+
+Every user has the password **`Bonify2026!`**. All IBANs start with `IT60X0542811101000000`.
+
+| User | Email | Role | Accounts (IBAN suffix) |
+|---|---|---|---|
+| Admin Bonify | `admin@bonify.example` | Admin | — |
+| Mario Rossi | `mario.rossi@bonify.example` | Customer | `100001`, `100002` (savings) |
+| Giulia Bianchi | `giulia.bianchi@bonify.example` | Customer | `100003` |
+| Luca Verdi | `luca.verdi@bonify.example` | Customer | `100004`, `100005` (**blocked**) |
+| Sofia Esposito | `sofia.esposito@bonify.example` | Customer | `100006` |
+| Alessandro Romano | `alessandro.romano@bonify.example` | Customer | `100007` |
+
+The accounts have about 50 movements (salaries, cash withdrawals, rent, refunds, transfers between customers) spread over the last 90 days, so the paginated history and its date filter have data to show. The seeder follows the same rules as the API: no negative balance, one ledger line per balance change, two per transfer.
 
 ---
 
@@ -132,6 +149,7 @@ All secrets come from environment variables. Nothing sensitive is committed to t
 | `DB_USER` | Database user | `bonify` |
 | `DB_PASSWORD` | Database password | — |
 | `JWT_SECRET` | Secret used to sign tokens, at least 32 bytes | — |
+| `SEED_ENABLED` | Load the demo data at startup (optional) | `true` |
 
 The `POSTGRES_*` values are applied only when the Docker volume is created. If you change `DB_NAME`, `DB_USER` or `DB_PASSWORD` later, recreate the volume (`docker compose down -v`, which deletes the data) or change them inside PostgreSQL.
 
@@ -148,7 +166,7 @@ There are no Spring profiles: the same configuration is used locally and in CI.
 
 ## Using the API
 
-The easiest way is **Swagger UI**: log in, click **Authorize**, paste the token and try every endpoint.
+The easiest way is **Swagger UI**: log in (with a [demo user](#demo-data) or a new registration), click **Authorize**, paste the `accessToken` and try every endpoint. The description at the top of Swagger UI is a quick start, the endpoints are grouped by area (Auth, Customers, Accounts, Transactions, Transfers), every request has a valid example body and every endpoint lists its error responses in RFC 7807 format.
 
 ### Endpoints
 
@@ -257,11 +275,10 @@ The integration tests include the concurrency test of NFR-03 (100 parallel trans
 ```mermaid
 flowchart LR
     A[Pull request] --> B[ci.yml: build + tests]
-    B -->|review approved, merge| C[main]
+    B -->|merge| C[main]
 ```
 
 - **`ci.yml`** runs on every pull request to `main` and on every push to `main`: starts a PostgreSQL 16 service, sets up Java with the Maven cache and runs `mvn verify`.
-- **Branch protection:** `main` accepts only pull requests with one approval and a green CI.
 
 There is no CD pipeline: the project is not deployed anywhere.
 
@@ -275,11 +292,13 @@ There is no CD pipeline: the project is not deployed anywhere.
 
 **Idempotency keys.** Clients send a unique `Idempotency-Key` with each transfer. The key is stored with a hash of the request: the same request sent again returns the original result, while the same key with a different body is rejected with `409`. This protects customers from double payments after timeouts or retries.
 
-**Ledger.** Every balance change writes a line in `account_transaction` with the resulting balance, in the same transaction. The balance can always be rebuilt from the ledger. A database `CHECK (balance >= 0)` is the last line of defence.
+**Ledger.** Every balance change writes a line in `account_transactions` with the resulting balance, in the same transaction. The balance can always be rebuilt from the ledger. A database `CHECK (balance >= 0)` is the last line of defence.
 
 **JWT subject is the customer id.** Tokens identify the customer by id, not email, so a token stays valid when the customer changes their email.
 
 **Short-lived access token, rotating refresh token.** The access token (JWT) lasts 5 minutes and is validated without touching the database. The refresh token is an opaque random value stored only as a SHA-256 hash in `refresh_tokens`; every refresh replaces it. A refresh token presented twice means it was copied, so the whole session is revoked. Each customer has one active session: a new login ends the previous one.
+
+**Demo data from code.** The demo data is created by an `ApplicationRunner` through the JPA entities, not by a SQL script: with a Hibernate-generated schema a script would break at every entity change. The creation timestamps are moved into the past after the insert, because `@CreationTimestamp` always sets the current time.
 
 **Schema generated by Hibernate.** The schema comes from the JPA entities (`ddl-auto=update`); there is no migration tool. Hibernate adds new tables and columns but never drops them.
 
@@ -292,8 +311,9 @@ There is no CD pipeline: the project is not deployed anywhere.
 ├── .github/workflows/ci.yml
 ├── src/main/java/com/bonifybank/bonify/
 │   ├── common/                   # DTOs shared by modules (paged response)
-│   ├── config/                   # security, JWT, .env loading, API versioning, scheduling
+│   ├── config/                   # security, JWT, .env loading, API versioning, scheduling, OpenAPI docs and examples
 │   ├── exception/                # business exceptions, global handler (RFC 7807)
+│   ├── seed/                     # demo data loaded at startup
 │   └── modules/
 │       ├── auth/                 # registration, login, JWT, refresh tokens
 │       ├── customer/             # profile, password, admin customer list
