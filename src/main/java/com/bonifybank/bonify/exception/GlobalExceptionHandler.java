@@ -5,6 +5,8 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -33,6 +35,8 @@ import com.bonifybank.bonify.exception.dto.ErrorResponse;
 // filter-chain accessDeniedHandler covers 403 raised by the security filters themselves.
 @ControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private static final MediaType PROBLEM_JSON = MediaType.parseMediaType("application/problem+json");
 
@@ -201,9 +205,10 @@ public class GlobalExceptionHandler {
                 "Content-Type must be application/json", pathOf(request)));
     }
 
-    // Fallback: any other exception → 500 INTERNAL_ERROR, no stack trace
+    // Fallback: any other exception → 500 INTERNAL_ERROR. The stack trace is logged, never sent to the client.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest request) {
+        log.error("Unhandled exception on {} {}", request.getMethod(), pathOf(request), ex);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, problemDetail(ErrorCodes.INTERNAL_ERROR, "Internal server error", pathOf(request)));
     }
 }
