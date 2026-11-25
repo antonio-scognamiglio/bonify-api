@@ -52,8 +52,8 @@ public class TransferService {
         }
 
         String normalizedKey = idempotencyKey.trim();
-        String sourceIban = request.sourceIban().trim();
-        String targetIban = request.targetIban().trim();
+        String sourceIban = request.fromIban().trim();
+        String targetIban = request.toIban().trim();
         String requestFingerPrint = fingerprint(sourceIban, targetIban, request.amount(), request.description());
 
         Optional<TransferEntity> existing = transferRepository.findByIdempotencyKey(normalizedKey);
