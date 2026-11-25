@@ -1,5 +1,8 @@
 package com.bonifybank.bonify.exception;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -9,9 +12,14 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -99,6 +107,52 @@ class GlobalExceptionHandlerTests {
         ErrorResponse body = response.getBody();
         assert response.getStatusCode().value() == HttpStatus.BAD_REQUEST.value();
         assert body.code() == ErrorCodes.VALIDATION_ERROR.name();
+    }
+
+    @Test
+    void missingHeaderIsValidationError() throws Exception {
+        MethodParameter param = new MethodParameter(Thrower.class.getMethod("throwIt", Object.class), 0);
+
+        ResponseEntity<ErrorResponse> response =
+                handler.handleMissingHeader(new MissingRequestHeaderException("Idempotency-Key", param), request);
+
+        assertValidationError(response, "Missing required header: Idempotency-Key");
+    }
+
+    @Test
+    void missingParameterIsValidationError() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleMissingParameter(new MissingServletRequestParameterException("size", "int"), request);
+
+        assertValidationError(response, "Missing required parameter: size");
+    }
+
+    @Test
+    void unreadableBodyIsValidationErrorWithoutParserDetails() {
+        HttpMessageNotReadableException ex = new HttpMessageNotReadableException(
+                "JSON parse error: Unexpected end-of-input in com.example.Internal",
+                new MockHttpInputMessage(new byte[0]));
+
+        ResponseEntity<ErrorResponse> response = handler.handleNotReadable(ex, request);
+
+        assertValidationError(response, "Request body is missing or malformed");
+    }
+
+    @Test
+    void typeMismatchIsValidationError() throws Exception {
+        MethodParameter param = new MethodParameter(Thrower.class.getMethod("throwIt", Object.class), 0);
+        MethodArgumentTypeMismatchException ex = new MethodArgumentTypeMismatchException(
+                "not-a-uuid", UUID.class, "id", param, new IllegalArgumentException("bad"));
+
+        ResponseEntity<ErrorResponse> response = handler.handleTypeMismatch(ex, request);
+
+        assertValidationError(response, "Invalid value for 'id'");
+    }
+
+    private static void assertValidationError(ResponseEntity<ErrorResponse> response, String detail) {
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.VALIDATION_ERROR.name());
+        assertThat(response.getBody().detail()).isEqualTo(detail);
     }
 
     @Test

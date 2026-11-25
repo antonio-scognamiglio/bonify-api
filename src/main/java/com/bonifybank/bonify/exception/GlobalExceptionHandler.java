@@ -10,7 +10,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.accept.InvalidApiVersionException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -106,6 +111,44 @@ public class GlobalExceptionHandler {
         ex.getBindingResult().getFieldErrors()
                 .forEach(e -> fieldErrors.put(e.getField(), e.getDefaultMessage()));
         return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Field errors: " + fieldErrors, pathOf(request)));
+    }
+
+    // Constraint on a @RequestParam / @PathVariable / @RequestHeader failed (e.g. size > 100) → 400 VALIDATION_ERROR
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException ex, HttpServletRequest request) {
+        Map<String, String> paramErrors = new LinkedHashMap<>();
+        ex.getParameterValidationResults().forEach(result -> result.getResolvableErrors()
+                .forEach(e -> paramErrors.put(result.getMethodParameter().getParameterName(), e.getDefaultMessage())));
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Parameter errors: " + paramErrors, pathOf(request)));
+    }
+
+    // Required header missing (e.g. Idempotency-Key) → 400 VALIDATION_ERROR
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Missing required header: " + ex.getHeaderName(), pathOf(request)));
+    }
+
+    // Required query parameter missing → 400 VALIDATION_ERROR
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Missing required parameter: " + ex.getParameterName(), pathOf(request)));
+    }
+
+    // Body missing, malformed JSON or a value of the wrong type → 400 VALIDATION_ERROR.
+    // The parser message is not echoed: it can be long and expose internal class names.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Request body is missing or malformed", pathOf(request)));
+    }
+
+    // Path or query value of the wrong type (e.g. a non-UUID id, a non-ISO date) → 400 VALIDATION_ERROR
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Invalid value for '" + ex.getName() + "'", pathOf(request)));
     }
 
     // Unsupported API version → 400 VALIDATION_ERROR
