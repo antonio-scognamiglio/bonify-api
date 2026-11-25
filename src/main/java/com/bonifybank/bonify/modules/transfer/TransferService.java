@@ -1,10 +1,12 @@
 package com.bonifybank.bonify.modules.transfer;
 
+import com.bonifybank.bonify.exception.BusinessException;
+import com.bonifybank.bonify.exception.ErrorCodes;
 import com.bonifybank.bonify.modules.account.AccountEntity;
 import com.bonifybank.bonify.modules.account.AccountRepository;
 import com.bonifybank.bonify.modules.account.AccountStatus;
+import com.bonifybank.bonify.modules.customer.CurrentCustomerResolver;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
-import com.bonifybank.bonify.modules.customer.CustomerRepository;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
 import com.bonifybank.bonify.modules.transaction.TransactionEntity;
 import com.bonifybank.bonify.modules.transaction.TransactionRepository;
@@ -29,50 +31,47 @@ public class TransferService {
     private final TransferRepository transferRepository;
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
-    private final CustomerRepository customerRepository;
+    private final CurrentCustomerResolver currentCustomerResolver;
 
     public TransferService(
             TransferRepository transferRepository,
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
-            CustomerRepository customerRepository){
+            CurrentCustomerResolver currentCustomerResolver) {
         this.accountRepository = accountRepository;
         this.transferRepository = transferRepository;
         this.transactionRepository = transactionRepository;
-        this.customerRepository = customerRepository;
+        this.currentCustomerResolver = currentCustomerResolver;
     }
 
     @Transactional
-    public TransferResponse sendTransfer(String idempotencyKey, TransferRequest request){
+    public TransferResponse sendTransfer(String idempotencyKey, TransferRequest request) {
 
-        //TO DO REPLACE EXCEPTION
-        if (idempotencyKey == null || idempotencyKey.isBlank()){
-            throw new IllegalArgumentException("Idempotency-Key header is required");
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "Idempotency-Key header is required");
         }
 
         String normalizedKey = idempotencyKey.trim();
         String sourceIban = request.sourceIban().trim();
         String targetIban = request.targetIban().trim();
-        String requestFingerPrint = fingerprint(sourceIban,targetIban,request.amount(), request.description());
+        String requestFingerPrint = fingerprint(sourceIban, targetIban, request.amount(), request.description());
 
         Optional<TransferEntity> existing = transferRepository.findByIdempotencyKey(normalizedKey);
 
-        if (existing.isPresent()){
+        if (existing.isPresent()) {
             TransferEntity savedTransfer = existing.get();
 
-            //TO DO REPLACE EXCEPTION
-            if (!savedTransfer.getRequest().equals(requestFingerPrint)){
-                throw new IllegalStateException("Idempotency-Key already used with different transfer payload");
+            if (!savedTransfer.getRequest().equals(requestFingerPrint)) {
+                throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
             }
-            return  toResponse(savedTransfer);
+            return toResponse(savedTransfer);
         }
 
-        // TO DO REPLACE EXCEPTION
         if (sourceIban.equalsIgnoreCase(targetIban)) {
-            throw new IllegalArgumentException("Source and target IBAN must be different");
+            throw new BusinessException(ErrorCodes.SAME_ACCOUNT, "Source and target IBAN must be different");
         }
 
-        CustomerEntity current = getCurrentCustomer();
+        CustomerEntity current = currentCustomerResolver.currentCustomer();
 
         List<String> orderedIbans = Stream.of(sourceIban, targetIban)
                 .sorted(Comparator.naturalOrder())
@@ -84,24 +83,20 @@ public class TransferService {
         AccountEntity fromAccount = firstLocked.getIban().equals(sourceIban) ? firstLocked : secondLocked;
         AccountEntity toAccount = firstLocked.getIban().equals(targetIban) ? firstLocked : secondLocked;
 
-        // TO DO REPLACE EXCEPTION
         if (!fromAccount.getCustomer().getId().equals(current.getId())) {
-            throw new SecurityException("Source account does not belong to authenticated customer");
+            throw new BusinessException(ErrorCodes.FORBIDDEN, "Source account does not belong to authenticated customer");
         }
 
-        // TO DO REPLACE EXCEPTION
         if (fromAccount.getStatus() != AccountStatus.ACTIVE || toAccount.getStatus() != AccountStatus.ACTIVE) {
-            throw new IllegalStateException("Both accounts must be ACTIVE");
+            throw new BusinessException(ErrorCodes.ACCOUNT_BLOCKED, "Both accounts must be ACTIVE");
         }
 
-        // TO DO REPLACE EXCEPTION
         if (!fromAccount.getCurrency().equals(toAccount.getCurrency())) {
-            throw new IllegalArgumentException("Currency mismatch between source and target accounts");
+            throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "Currency mismatch between source and target accounts");
         }
 
-        // TO DO REPLACE EXCEPTION
         if (fromAccount.getBalance().compareTo(request.amount()) < 0) {
-            throw new IllegalArgumentException("Insufficient balance");
+            throw new BusinessException(ErrorCodes.INSUFFICIENT_FUNDS, "Insufficient balance");
         }
 
         BigDecimal newFromBalance = fromAccount.getBalance().subtract(request.amount());
@@ -152,40 +147,24 @@ public class TransferService {
     }
 
     @Transactional(readOnly = true)
-    public TransferResponse getTransfer(UUID id){
-        //TO DO REPLACE EXCEPTION
+    public TransferResponse getTransfer(UUID id) {
         TransferEntity transfer = transferRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Transfer not found: " + id));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Transfer not found: " + id));
 
-        CustomerEntity current = getCurrentCustomer();
+        CustomerEntity current = currentCustomerResolver.currentCustomer();
         boolean isAdmin = current.getRole() == CustomerRole.ADMIN;
         boolean isParticipant = transfer.getFromAccount().getCustomer().getId().equals(current.getId())
-                ||transfer.getToAccount().getCustomer().getId().equals(current.getId());
+                || transfer.getToAccount().getCustomer().getId().equals(current.getId());
 
-        //TO DO REPLACE EXCEPTION
-        if (!isAdmin && !isParticipant){
-            throw new SecurityException("Access denied to transfer: " + id);
+        if (!isAdmin && !isParticipant) {
+            throw new BusinessException(ErrorCodes.FORBIDDEN, "Access denied to transfer: " + id);
         }
         return toResponse(transfer);
     }
 
-    private AccountEntity getAccountForUpdate(String iban){
+    private AccountEntity getAccountForUpdate(String iban) {
         return accountRepository.findByIbanForUpdate(iban)
-                .orElseThrow(()-> new IllegalArgumentException("Account not found: " + iban));
-    }
-
-    private CustomerEntity getCurrentCustomer(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        //TO DO REPLACE EXCEPTION
-        if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {
-            throw new IllegalStateException("No authenticated user found");
-        }
-
-        String email = authentication.getName().trim().toLowerCase();
-        //TO DO REPLACE EXCEPTION
-        return customerRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Authenticated customer not found"));
+                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Account not found: " + iban));
     }
 
     private String fingerprint(String sourceIban, String targetIban, BigDecimal amount, String description) {
