@@ -228,7 +228,9 @@ Errors follow the RFC 7807 `ProblemDetail` format, with a stable `code` field:
 | 401 | Missing, invalid or expired access token; wrong credentials; invalid, expired or reused refresh token |
 | 403 | Not your account or not an admin |
 | 404 | Customer, account or transfer not found |
+| 405 | HTTP method not supported on the path |
 | 409 | Email or tax code already used, idempotency key reused with a different body |
+| 415 | Body sent with a `Content-Type` other than JSON |
 | 422 | Insufficient funds, blocked account |
 
 ---

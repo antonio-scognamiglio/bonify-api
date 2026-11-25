@@ -1,5 +1,9 @@
 package com.bonifybank.bonify.exception;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -7,11 +11,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -40,6 +52,8 @@ class GlobalExceptionHandlerTests {
                 Arguments.of(ErrorCodes.UNAUTHORIZED,           HttpStatus.UNAUTHORIZED),
                 Arguments.of(ErrorCodes.FORBIDDEN,             HttpStatus.FORBIDDEN),
                 Arguments.of(ErrorCodes.NOT_FOUND,             HttpStatus.NOT_FOUND),
+                Arguments.of(ErrorCodes.METHOD_NOT_ALLOWED,    HttpStatus.METHOD_NOT_ALLOWED),
+                Arguments.of(ErrorCodes.UNSUPPORTED_MEDIA_TYPE, HttpStatus.UNSUPPORTED_MEDIA_TYPE),
                 Arguments.of(ErrorCodes.EMAIL_ALREADY_USED,    HttpStatus.CONFLICT),
                 Arguments.of(ErrorCodes.IDEMPOTENCY_KEY_REUSED, HttpStatus.CONFLICT),
                 Arguments.of(ErrorCodes.INSUFFICIENT_FUNDS,    HttpStatus.UNPROCESSABLE_CONTENT),
@@ -99,6 +113,72 @@ class GlobalExceptionHandlerTests {
         ErrorResponse body = response.getBody();
         assert response.getStatusCode().value() == HttpStatus.BAD_REQUEST.value();
         assert body.code() == ErrorCodes.VALIDATION_ERROR.name();
+    }
+
+    @Test
+    void missingHeaderIsValidationError() throws Exception {
+        MethodParameter param = new MethodParameter(Thrower.class.getMethod("throwIt", Object.class), 0);
+
+        ResponseEntity<ErrorResponse> response =
+                handler.handleMissingHeader(new MissingRequestHeaderException("Idempotency-Key", param), request);
+
+        assertValidationError(response, "Missing required header: Idempotency-Key");
+    }
+
+    @Test
+    void missingParameterIsValidationError() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleMissingParameter(new MissingServletRequestParameterException("size", "int"), request);
+
+        assertValidationError(response, "Missing required parameter: size");
+    }
+
+    @Test
+    void unreadableBodyIsValidationErrorWithoutParserDetails() {
+        HttpMessageNotReadableException ex = new HttpMessageNotReadableException(
+                "JSON parse error: Unexpected end-of-input in com.example.Internal",
+                new MockHttpInputMessage(new byte[0]));
+
+        ResponseEntity<ErrorResponse> response = handler.handleNotReadable(ex, request);
+
+        assertValidationError(response, "Request body is missing or malformed");
+    }
+
+    @Test
+    void typeMismatchIsValidationError() throws Exception {
+        MethodParameter param = new MethodParameter(Thrower.class.getMethod("throwIt", Object.class), 0);
+        MethodArgumentTypeMismatchException ex = new MethodArgumentTypeMismatchException(
+                "not-a-uuid", UUID.class, "id", param, new IllegalArgumentException("bad"));
+
+        ResponseEntity<ErrorResponse> response = handler.handleTypeMismatch(ex, request);
+
+        assertValidationError(response, "Invalid value for 'id'");
+    }
+
+    @Test
+    void unsupportedMethodIsMethodNotAllowedWithAllowHeader() {
+        HttpRequestMethodNotSupportedException ex = new HttpRequestMethodNotSupportedException("DELETE", List.of("GET", "POST"));
+
+        ResponseEntity<ErrorResponse> response = handler.handleMethodNotSupported(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.METHOD_NOT_ALLOWED.name());
+        assertThat(response.getHeaders().getAllow()).containsExactlyInAnyOrder(HttpMethod.GET, HttpMethod.POST);
+    }
+
+    @Test
+    void unsupportedMediaTypeIs415() {
+        ResponseEntity<ErrorResponse> response = handler.handleMediaTypeNotSupported(
+                new HttpMediaTypeNotSupportedException("Content-Type 'text/plain' is not supported"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.UNSUPPORTED_MEDIA_TYPE.name());
+    }
+
+    private static void assertValidationError(ResponseEntity<ErrorResponse> response, String detail) {
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().code()).isEqualTo(ErrorCodes.VALIDATION_ERROR.name());
+        assertThat(response.getBody().detail()).isEqualTo(detail);
     }
 
     @Test

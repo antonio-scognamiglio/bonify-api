@@ -5,12 +5,22 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.accept.InvalidApiVersionException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -26,6 +36,8 @@ import com.bonifybank.bonify.exception.dto.ErrorResponse;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     private static final MediaType PROBLEM_JSON = MediaType.parseMediaType("application/problem+json");
 
     private static final Map<ErrorCodes, HttpStatus> STATUS_BY_CODE;
@@ -39,9 +51,11 @@ public class GlobalExceptionHandler {
         STATUS_BY_CODE.put(ErrorCodes.UNAUTHORIZED, HttpStatus.UNAUTHORIZED);
         STATUS_BY_CODE.put(ErrorCodes.FORBIDDEN, HttpStatus.FORBIDDEN);
         STATUS_BY_CODE.put(ErrorCodes.NOT_FOUND, HttpStatus.NOT_FOUND);
+        STATUS_BY_CODE.put(ErrorCodes.METHOD_NOT_ALLOWED, HttpStatus.METHOD_NOT_ALLOWED);
         STATUS_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, HttpStatus.CONFLICT);
         STATUS_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, HttpStatus.CONFLICT);
+        STATUS_BY_CODE.put(ErrorCodes.UNSUPPORTED_MEDIA_TYPE, HttpStatus.UNSUPPORTED_MEDIA_TYPE);
         STATUS_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS,    HttpStatus.UNPROCESSABLE_CONTENT);
         STATUS_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED,        HttpStatus.UNPROCESSABLE_CONTENT);
         STATUS_BY_CODE.put(ErrorCodes.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -53,9 +67,11 @@ public class GlobalExceptionHandler {
         TITLE_BY_CODE.put(ErrorCodes.UNAUTHORIZED, "Unauthorized");
         TITLE_BY_CODE.put(ErrorCodes.FORBIDDEN, "Forbidden");
         TITLE_BY_CODE.put(ErrorCodes.NOT_FOUND, "Not found");
+        TITLE_BY_CODE.put(ErrorCodes.METHOD_NOT_ALLOWED, "Method not allowed");
         TITLE_BY_CODE.put(ErrorCodes.EMAIL_ALREADY_USED, "Email already in use");
         TITLE_BY_CODE.put(ErrorCodes.TAX_CODE_ALREADY_USED, "Tax code already in use");
         TITLE_BY_CODE.put(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency key reused with a different body");
+        TITLE_BY_CODE.put(ErrorCodes.UNSUPPORTED_MEDIA_TYPE, "Unsupported media type");
         TITLE_BY_CODE.put(ErrorCodes.INSUFFICIENT_FUNDS, "Insufficient funds");
         TITLE_BY_CODE.put(ErrorCodes.ACCOUNT_BLOCKED, "Account blocked");
         TITLE_BY_CODE.put(ErrorCodes.INTERNAL_ERROR, "Internal error");
@@ -108,6 +124,44 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Field errors: " + fieldErrors, pathOf(request)));
     }
 
+    // Constraint on a @RequestParam / @PathVariable / @RequestHeader failed (e.g. size > 100) → 400 VALIDATION_ERROR
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException ex, HttpServletRequest request) {
+        Map<String, String> paramErrors = new LinkedHashMap<>();
+        ex.getParameterValidationResults().forEach(result -> result.getResolvableErrors()
+                .forEach(e -> paramErrors.put(result.getMethodParameter().getParameterName(), e.getDefaultMessage())));
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR, "Parameter errors: " + paramErrors, pathOf(request)));
+    }
+
+    // Required header missing (e.g. Idempotency-Key) → 400 VALIDATION_ERROR
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Missing required header: " + ex.getHeaderName(), pathOf(request)));
+    }
+
+    // Required query parameter missing → 400 VALIDATION_ERROR
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Missing required parameter: " + ex.getParameterName(), pathOf(request)));
+    }
+
+    // Body missing, malformed JSON or a value of the wrong type → 400 VALIDATION_ERROR.
+    // The parser message is not echoed: it can be long and expose internal class names.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Request body is missing or malformed", pathOf(request)));
+    }
+
+    // Path or query value of the wrong type (e.g. a non-UUID id, a non-ISO date) → 400 VALIDATION_ERROR
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, problemDetail(ErrorCodes.VALIDATION_ERROR,
+                "Invalid value for '" + ex.getName() + "'", pathOf(request)));
+    }
+
     // Unsupported API version → 400 VALIDATION_ERROR
     @ExceptionHandler(InvalidApiVersionException.class)
     public ResponseEntity<ErrorResponse> handleInvalidApiVersion(InvalidApiVersionException ex, HttpServletRequest request) {
@@ -132,9 +186,29 @@ public class GlobalExceptionHandler {
         return respond(HttpStatus.FORBIDDEN, problemDetail(ErrorCodes.FORBIDDEN, ex.getMessage(), pathOf(request)));
     }
 
-    // Fallback: any other exception → 500 INTERNAL_ERROR, no stack trace
+    // HTTP method not mapped on an existing path (e.g. DELETE /accounts) → 405, with the Allow header
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        ErrorResponse error = problemDetail(ErrorCodes.METHOD_NOT_ALLOWED,
+                "Method " + ex.getMethod() + " is not supported on this path", pathOf(request));
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getSupportedHttpMethods() != null) {
+            headers.setAllow(ex.getSupportedHttpMethods());
+        }
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).headers(headers).contentType(PROBLEM_JSON).body(error);
+    }
+
+    // Body sent with a Content-Type other than JSON → 415
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+        return respond(HttpStatus.UNSUPPORTED_MEDIA_TYPE, problemDetail(ErrorCodes.UNSUPPORTED_MEDIA_TYPE,
+                "Content-Type must be application/json", pathOf(request)));
+    }
+
+    // Fallback: any other exception → 500 INTERNAL_ERROR. The stack trace is logged, never sent to the client.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest request) {
+        log.error("Unhandled exception on {} {}", request.getMethod(), pathOf(request), ex);
         return respond(HttpStatus.INTERNAL_SERVER_ERROR, problemDetail(ErrorCodes.INTERNAL_ERROR, "Internal server error", pathOf(request)));
     }
 }
