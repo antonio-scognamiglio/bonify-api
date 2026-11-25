@@ -1,6 +1,8 @@
 package com.bonifybank.bonify.modules.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,16 +15,19 @@ import java.util.UUID;
 
 import javax.crypto.spec.SecretKeySpec;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.bonifybank.bonify.config.JwtConfig;
@@ -32,10 +37,11 @@ import com.bonifybank.bonify.config.WebConfig;
 import com.bonifybank.bonify.modules.customer.CustomerController;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
+import com.bonifybank.bonify.modules.customer.CustomerService;
 
 /**
  * FR-AUTH-02 / FR-AUTH-03 with real tokens: issued by JwtService, validated by the security filter chain.
- * 501 = the request passed security and reached the (not yet implemented) controller.
+ * 200 = the request passed security and reached the controller (the service is mocked).
  */
 @WebMvcTest(CustomerController.class)
 @Import({ WebConfig.class, SecurityConfig.class, JwtConfig.class, JwtService.class })
@@ -49,6 +55,14 @@ class JwtAuthenticationTests {
 
     @Autowired
     MockMvc mockMvc;
+
+    @MockitoBean
+    CustomerService customerService;
+
+    @BeforeEach
+    void stubService() {
+        when(customerService.listCustomers(anyInt(), anyInt())).thenReturn(Page.empty());
+    }
 
     @Autowired
     JwtService jwtService;
@@ -83,7 +97,7 @@ class JwtAuthenticationTests {
     @Test
     void customerTokenReachesCustomerEndpoint() throws Exception {
         mockMvc.perform(get(ME).header(HttpHeaders.AUTHORIZATION, bearer(CustomerRole.CUSTOMER)))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -95,7 +109,7 @@ class JwtAuthenticationTests {
     @Test
     void adminTokenReachesAdminEndpoint() throws Exception {
         mockMvc.perform(get(ALL_CUSTOMERS).header(HttpHeaders.AUTHORIZATION, bearer(CustomerRole.ADMIN)))
-                .andExpect(status().isNotImplemented());
+                .andExpect(status().isOk());
     }
 
     @Test

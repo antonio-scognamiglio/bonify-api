@@ -12,9 +12,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.bonifybank.bonify.modules.customer.CustomerController;
+import com.bonifybank.bonify.modules.customer.CustomerService;
 
 /**
  * 401 (unauthenticated) comes from the security filter chain's entry point;
@@ -29,6 +31,10 @@ class SecurityErrorFormatTests {
 
     @Autowired
     MockMvc mockMvc;
+
+    // Never reached (security rejects first), but required to build the controller
+    @MockitoBean
+    CustomerService customerService;
 
     @Test
     void guestOnProtectedRouteIsProblemDetail401() throws Exception {
