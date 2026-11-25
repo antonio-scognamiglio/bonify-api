@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AccountService {
@@ -148,13 +149,13 @@ public class AccountService {
                 .orElseThrow(() -> new IllegalArgumentException("Authenticated customer not found"));
     }
 
-    //TO DO FIX THIS METHOD
     private String generateUniqueIban() {
-        // Sostituisci con il tuo generatore IBAN (max 34 caratteri) verificando l'unicità sul repository
+        String prefix = "IT60X0542811101000000"; // 21 caratteri
         String candidate;
         do {
-            candidate = "IT60X0542811101000000" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
-        } while (accountRepository.findByIban(candidate).isPresent());
+            int randomSixDigits = ThreadLocalRandom.current().nextInt(0, 1_000_000);
+            candidate = prefix + String.format("%06d", randomSixDigits); // 27 caratteri totali
+        } while (accountRepository.existsByIban(candidate));
         return candidate;
     }
 
