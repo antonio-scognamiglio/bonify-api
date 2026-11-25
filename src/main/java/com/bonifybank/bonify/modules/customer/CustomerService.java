@@ -3,7 +3,6 @@ package com.bonifybank.bonify.modules.customer;
 import com.bonifybank.bonify.modules.auth.RefreshTokenService;
 import com.bonifybank.bonify.exception.BusinessException;
 import com.bonifybank.bonify.exception.ErrorCodes;
-import com.bonifybank.bonify.modules.customer.dto.AdminUpdateCustomerRequest;
 import com.bonifybank.bonify.modules.customer.dto.ChangePasswordRequest;
 import com.bonifybank.bonify.modules.customer.dto.CustomerResponse;
 import com.bonifybank.bonify.modules.customer.dto.UpdateProfileRequest;
@@ -18,7 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
-import java.util.UUID;
 
 @Service
 public class CustomerService {
@@ -93,20 +91,6 @@ public class CustomerService {
     public Page<CustomerResponse> listCustomers(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return customerRepository.findAll(pageable).map(this::toResponse);
-    }
-
-    @Transactional
-    public CustomerResponse updateCustomer(UUID id, AdminUpdateCustomerRequest request) {
-        CustomerEntity customer = customerRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCodes.NOT_FOUND, "Customer not found: " + id));
-
-        if (request.role() != null && !request.role().isBlank()) {
-            CustomerRole newRole = CustomerRole.valueOf(request.role().trim().toUpperCase());
-            customer.setRole(newRole);
-        }
-
-        CustomerEntity saved = customerRepository.save(customer);
-        return toResponse(saved);
     }
 
     private CustomerResponse toResponse(CustomerEntity customer) {
