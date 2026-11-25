@@ -13,6 +13,7 @@ import com.bonifybank.bonify.modules.transaction.TransactionRepository;
 import com.bonifybank.bonify.modules.transaction.TransactionType;
 import com.bonifybank.bonify.modules.transfer.dto.TransferRequest;
 import com.bonifybank.bonify.modules.transfer.dto.TransferResponse;
+import com.bonifybank.bonify.modules.transfer.dto.TransferResult;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -23,10 +24,15 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 @Service
 public class TransferService {
+
+    // Canonical 8-4-4-4-12 form (UUID.fromString is too lenient, e.g. it accepts "1-1-1-1-1")
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
     private final TransferRepository transferRepository;
     private final AccountRepository accountRepository;
@@ -45,13 +51,17 @@ public class TransferService {
     }
 
     @Transactional
-    public TransferResponse sendTransfer(String idempotencyKey, TransferRequest request) {
+    public TransferResult sendTransfer(String idempotencyKey, TransferRequest request) {
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "Idempotency-Key header is required");
         }
+        // FR-TRF-01: the key is a UUID. Lower case, so the same UUID in another case is the same key
+        String normalizedKey = idempotencyKey.trim().toLowerCase(Locale.ROOT);
+        if (!UUID_PATTERN.matcher(normalizedKey).matches()) {
+            throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "Idempotency-Key must be a UUID");
+        }
 
-        String normalizedKey = idempotencyKey.trim();
         String sourceIban = request.fromIban().trim();
         String targetIban = request.toIban().trim();
         String requestFingerPrint = fingerprint(sourceIban, targetIban, request.amount(), request.description());
@@ -64,7 +74,8 @@ public class TransferService {
             if (!savedTransfer.getRequest().equals(requestFingerPrint)) {
                 throw new BusinessException(ErrorCodes.IDEMPOTENCY_KEY_REUSED, "Idempotency-Key already used with different transfer payload");
             }
-            return toResponse(savedTransfer);
+            // FR-TRF-02: idempotent retry, nothing moves again
+            return new TransferResult(toResponse(savedTransfer), false);
         }
 
         if (sourceIban.equalsIgnoreCase(targetIban)) {
@@ -143,7 +154,7 @@ public class TransferService {
         transactionRepository.save(outgoingTx);
         transactionRepository.save(incomingTx);
 
-        return toResponse(savedTransfer);
+        return new TransferResult(toResponse(savedTransfer), true);
     }
 
     @Transactional(readOnly = true)
