@@ -10,6 +10,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,10 +22,12 @@ import java.util.UUID;
 public class CustomerService {
     private final CustomerRepository customerRepository;
     private final CurrentCustomerResolver currentCustomerResolver;
+    private final PasswordEncoder passwordEncoder;
 
-    public CustomerService(CustomerRepository customerRepository, CurrentCustomerResolver currentCustomerResolver) {
+    public CustomerService(CustomerRepository customerRepository, CurrentCustomerResolver currentCustomerResolver, PasswordEncoder passwordEncoder) {
         this.customerRepository = customerRepository;
         this.currentCustomerResolver = currentCustomerResolver;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +67,7 @@ public class CustomerService {
             throw new BusinessException(ErrorCodes.VALIDATION_ERROR, "New password must be different from current password");
         }
 
-        current.setPassword(hashPassword(request.newPassword()));
+        current.setPassword(passwordEncoder.encode(request.newPassword()));
         customerRepository.save(current);
     }
 
@@ -84,14 +89,6 @@ public class CustomerService {
 
         CustomerEntity saved = customerRepository.save(customer);
         return toResponse(saved);
-    }
-
-    private boolean matchesHash(String rawPassword, String storedHash) {
-        return hashPassword(rawPassword).equals(storedHash);
-    }
-
-    private String hashPassword(String rawPassword) {
-        throw new UnsupportedOperationException("Password hashing method not configured yet");
     }
 
     private CustomerResponse toResponse(CustomerEntity customer) {

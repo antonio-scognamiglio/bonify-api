@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class AccountService {
@@ -124,11 +125,14 @@ public class AccountService {
         return account;
     }
 
+
     private String generateUniqueIban() {
+        String prefix = "IT60X0542811101000000"; // 21 caratteri
         String candidate;
         do {
-            candidate = "IT60X0542811101000000" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
-        } while (accountRepository.findByIban(candidate).isPresent());
+            int randomSixDigits = ThreadLocalRandom.current().nextInt(0, 1_000_000);
+            candidate = prefix + String.format("%06d", randomSixDigits); // 27 caratteri totali
+        } while (accountRepository.existsByIban(candidate));
         return candidate;
     }
 
