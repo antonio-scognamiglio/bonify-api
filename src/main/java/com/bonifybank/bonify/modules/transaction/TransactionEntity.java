@@ -5,7 +5,6 @@ import com.bonifybank.bonify.modules.transfer.TransferEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.resource.transaction.spi.TransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;

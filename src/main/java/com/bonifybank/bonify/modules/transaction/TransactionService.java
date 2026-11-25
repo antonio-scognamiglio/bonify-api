@@ -2,7 +2,6 @@ package com.bonifybank.bonify.modules.transaction;
 
 import com.bonifybank.bonify.modules.account.AccountEntity;
 import com.bonifybank.bonify.modules.account.AccountRepository;
-import com.bonifybank.bonify.modules.account.dto.AccountResponse;
 import com.bonifybank.bonify.modules.customer.CustomerEntity;
 import com.bonifybank.bonify.modules.customer.CustomerRepository;
 import com.bonifybank.bonify.modules.customer.CustomerRole;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service

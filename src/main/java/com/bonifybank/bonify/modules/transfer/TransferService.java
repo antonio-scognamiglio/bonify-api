@@ -12,7 +12,6 @@ import com.bonifybank.bonify.modules.transaction.TransactionType;
 import com.bonifybank.bonify.modules.transfer.dto.TransferRequest;
 import com.bonifybank.bonify.modules.transfer.dto.TransferResponse;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
